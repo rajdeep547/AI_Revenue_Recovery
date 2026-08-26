@@ -1,0 +1,23 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\LENONO\\Downloads\\AI revenue recovery']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [26384] using WatchFiles
+INFO:     Started server process [27932]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:55832 - "GET /healthz HTTP/1.1" 200 OK
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSp9paVicjxiyX)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
+INFO:     2409:40d2:300a:af:5d18:615b:79df:b9d4:0 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     2409:40d2:300a:af:5d18:615b:79df:b9d4:0 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+WARNING:razorpay_webhook:rejected webhook: bad signature (event_id=TSpW3XCu7xmuo1)
+INFO:     52.66.75.174:0 - "POST /webhooks/razorpay HTTP/1.1" 401 Unauthorized
