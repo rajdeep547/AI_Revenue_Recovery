@@ -24,6 +24,13 @@ def sign(body: bytes) -> str:
 
 @pytest.fixture(autouse=True)
 def clean_db():
+    # pytest imports every test module during collection before running any
+    # test, so a sibling module's own os.environ["WEBHOOK_DB_PATH"] = ...
+    # (set at its import time) can overwrite this file's value for the whole
+    # process. Re-set it here, at the start of each test, so this file's
+    # TestClient calls always resolve to TEST_DB regardless of module
+    # collection order.
+    os.environ["WEBHOOK_DB_PATH"] = TEST_DB
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
     yield
