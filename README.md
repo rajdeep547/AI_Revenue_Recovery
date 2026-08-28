@@ -57,6 +57,60 @@ Guarantees:
 payment-keyed); since the data is disposable local test data, old
 `*.db` files were deleted rather than migrated.
 
+## Slice 3 — synthetic data generator
+
+`datagen.py` is a standalone, deterministic generator. It is **not** part of the
+pipeline (`app/`): nothing under `app/` imports it.
+
+```bash
+python datagen.py --seed 20260826 --events 2000 --out-dir data
+python datagen.py --hist        # print a ticket-size histogram, write nothing
+```
+
+It writes two files to `--out-dir` (default `data/`, gitignored — it's a
+reproducible artifact):
+
+- `events.json` — 2,000 Razorpay-shaped webhook deliveries
+  (`payment.failed` / `payment.captured` / `payment.authorized`), a small cohort
+  per customer. Every failure carries an `error_reason` (a permitted Slice 7
+  classifier feature). This is all the pipeline is allowed to see — **no arm, no
+  probabilities.**
+- `ground_truth.json` — the counterfactual, per customer: `error_reason`, the
+  experiment `arm` (30% control), `p_would_pay_anyway` (recovers with no nudge),
+  `p_pay_if_nudged` (recovers with a nudge; always `>=` the former), the derived
+  `lift`, and the arm-dependent `realized` outcome. Control customers realise
+  against the base probability, treated against the nudged one. **No module
+  under `app/` may import or read this file** — tests / evaluation only.
+
+Base and lift are negatively correlated, keyed off `error_reason`: transient
+infra failures (`bank_downtime`, `gateway_timeout`) self-heal → high base, ~zero
+lift; card problems (`expired_card`, `invalid_card`) → low base, high lift. This
+is what lets Slice 5 tell "uplift measurement works" from "it's broken". Beta
+parameters, mix weights, calibration numbers, power reasoning and the output
+hashes are in [`DECISIONS.md`](DECISIONS.md). A `generate` run prints the three
+calibration figures (mean base ≈ 0.29, mean lift ≈ 0.10, corr ≈ −0.44).
+
+Ticket sizes are log-normal (`mu = ln 55000`, `sigma = 0.95`; median ≈ ₹560,
+mean ≈ ₹880) with retail-style rounding. `--hist` prints the distribution.
+
+Determinism: one `random.Random(seed)` drawn in a fixed order, timestamps
+derived from a constant epoch (never the wall clock), JSON written sorted /
+ASCII / `\n`-newline. Same seed in → byte-identical files out:
+
+```bash
+python datagen.py --out-dir run1
+python datagen.py --out-dir run2
+diff -r run1 run2            # no output
+grep -rn ground_truth app/   # no output
+```
+
+`tests/test_datagen.py` covers all of this: exactly 2,000 events, byte-identical
+reruns, a different seed changes the output, `p_pay_if_nudged >= p_would_pay_anyway`
+for every customer, mean lift inside `[0.08, 0.12]`, base/lift negatively
+correlated, control share within tolerance of 30%, `events.json` leaks no arm /
+probability / lift, `log(amount)` passes a KS test against a fitted normal, and
+`grep ground_truth app/` is empty.
+
 ## Setup
 
 ```bash
@@ -78,7 +132,7 @@ uvicorn app.main:app --reload --port 8000
 pytest tests/ -v
 ```
 
-Covers:
+Covers (Slices 1–2):
 - bad signature → `401`, row count unchanged
 - duplicate `x-razorpay-event-id` → `200` twice, exactly one row
 - `{"broken":` → `400`, `/healthz` still responds afterward (process alive)
