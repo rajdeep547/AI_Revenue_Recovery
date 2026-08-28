@@ -197,36 +197,49 @@ registry — adding a fourth source is a new entry, not a new code path elsewher
   ingested more than once and must dedupe on an identical row.
 - **`raw` keeps the original payload** for audit; nothing is lost.
 
-### Why at least one contact channel is required
+### Why at least one of email / phone is required
 
-The whole point of the pipeline is to *reach* a customer and nudge them. A
-normalized row with neither email nor phone is a customer the decision engine
-can never act on: it can't be assigned a real treatment, it can't convert, and
-if it sits in the population it dilutes every measured rate (recovery, lift)
-with dead weight while consuming policy budget in any per-row accounting. It's
-not a data-quality nicety — a contactless row is *structurally* outside the
-thing being measured, so it's rejected at the door (`no_contact_channel`) rather
-than carried as a special case through classifier, policy and eval.
+The pipeline exists to *reach* a customer and nudge them. A normalized row with
+neither email nor phone is a customer the decision engine can never act on — it
+is noise, not an event. The choice is to reject it at ingest (`no_contact_channel`)
+rather than let it flow through the classifier and the policy and only discover
+at send time that there is nowhere to send. A contactless row also quietly
+dilutes every measured rate (recovery, lift) with dead weight if it sits in the
+population, so it is kept out of the population entirely.
 
-### Why rejects are quarantined, not raised
+### Why bad rows are quarantined instead of raising
 
-`Ingestor.ingest()` is built to be called in a loop over a batch or a stream.
-If a bad payload raised, the exception would unwind the loop and every good row
-*after* the bad one would be lost — one malformed webhook takes down the batch.
-So `ingest()` never raises on input: it catches `AdapterError`, writes
+A 2,000-event run must be able to report *"1,996 ingested, 4 rejected, with
+reasons"* — not die on event 4. `Ingestor.ingest()` is called in a loop, and a
+raised exception would unwind that loop and lose every good row after the bad
+one. So `ingest()` never raises on input: it catches `AdapterError`, writes
 `(source, reason_code, reason_detail, raw, rejected_at)` to `rejected_events`,
 and returns `outcome=REJECTED`. Rejection becomes a *data outcome* — countable
-via `stats()`, inspectable via `rejected()`, replayable from `raw` after a fix —
-instead of control flow. `normalize()` stays a pure function and keeps raising,
-so unit code and tests can still assert on the specific `reason_code`. The
-`reason_code` set is deliberately small and closed (`missing_required_field`,
-`unknown_source`, `bad_amount`, `bad_timestamp`, `no_contact_channel`) so
-`stats()["rejected_by_reason"]` is a triage histogram, not free text.
+via `stats()`, inspectable via `rejected()`, replayable from `raw` once the
+upstream bug is fixed. `normalize()` still raises — it stays a pure function, so
+unit code and tests can assert on the specific `reason_code`; only
+`Ingestor.ingest()` catches. The `reason_code` set is small and closed
+(`missing_required_field`, `unknown_source`, `bad_amount`, `bad_timestamp`,
+`no_contact_channel`) so `stats()["rejected_by_reason"]` is a triage histogram,
+not free text.
+
+### Dedupe key is `source:reference`
+
+`event_id = f"{source}:{reference}"`, where `reference` is the source's own
+stable business id (payment id / checkout id / invoice id) — never a delivery or
+envelope id, so a redelivery with a fresh envelope id still collapses onto the
+first row. Prefixing with `source` means the *same* reference string arriving
+from two different sources does **not** collide: `abandoned_cart:X1` and
+`mandate_failure:X1` are two rows, not one. Enforced by a `UNIQUE` column with
+`INSERT OR IGNORE`, so dedupe also holds across process restarts for a
+file-backed `Ingestor`.
 
 ### `stats()` counts this ingestor's session
 
-`inserted` / `duplicate` / `rejected_by_reason` are in-memory counters reset at
-construction. `count()` still reports the true table size (which includes rows
+`stats()` returns `{inserted, duplicate, rejected, rejected_by_reason}` — all
+derived from in-memory counters reset at construction. `rejected` is the total;
+`rejected_by_reason` is the same total split by `reason_code` (a triage
+histogram). `count()` still reports the true table size (which includes rows
 from earlier sessions for a file-backed DB); `stats()` reports what *this*
 `Ingestor` instance did. Duplicates can't be counted any other way — a dedupe
 hit writes nothing.

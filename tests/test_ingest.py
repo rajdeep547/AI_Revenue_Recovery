@@ -165,6 +165,7 @@ def test_each_source_with_email_only_phone_only_both_neither():
         assert ing.stats() == {
             "inserted": 9,
             "duplicate": 0,
+            "rejected": 3,
             "rejected_by_reason": {"no_contact_channel": 3},
         }
 
@@ -200,7 +201,7 @@ def test_feed_all_three_then_dedupe_holds():
         assert ing.ingest("abandoned_cart", dict(CART)).outcome is Outcome.DUPLICATE
         assert ing.count() == 3
         assert [r["source"] for r in ing.rows()] == ["card_failure", "abandoned_cart", "mandate_failure"]
-        assert ing.stats() == {"inserted": 3, "duplicate": 3, "rejected_by_reason": {}}
+        assert ing.stats() == {"inserted": 3, "duplicate": 3, "rejected": 0, "rejected_by_reason": {}}
 
 
 def test_duplicate_returns_the_stored_row_without_overwriting():
@@ -314,6 +315,7 @@ def test_batch_of_ten_with_two_bad_rows():
         assert ing.stats() == {
             "inserted": 8,
             "duplicate": 0,
+            "rejected": 2,
             "rejected_by_reason": {"no_contact_channel": 1, "unknown_source": 1},
         }
 

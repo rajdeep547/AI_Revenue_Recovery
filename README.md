@@ -136,7 +136,7 @@ matches the mean lift, and `grep -rn 'ground_truth\|eval.' app/` is empty.
 
 `app/ingest.py` turns three upstream event shapes into one normalized row:
 
-| source | native shape | reference (dedupe key) |
+| source | native shape | `reference` |
 |---|---|---|
 | `card_failure` | Razorpay-style `payment.failed` webhook | `payment.entity.id` |
 | `abandoned_cart` | storefront checkout, total as a major-unit string | `checkout_id` |
@@ -148,23 +148,27 @@ from app.ingest import Ingestor, normalize
 normalize("card_failure", payload)          # -> dict, or raises AdapterError
 with Ingestor("ingest.db") as ing:
     res = ing.ingest("abandoned_cart", payload)   # -> IngestResult(outcome, row, reason_code)
-    ing.stats()   # {"inserted": N, "duplicate": M, "rejected_by_reason": {...}}
+    ing.stats()   # {"inserted": N, "duplicate": M, "rejected": K, "rejected_by_reason": {...}}
 ```
 
-Every row has exactly these keys: `event_id`, `source`, `customer_id`, `email`,
-`phone`, `amount_paise` (integer paise, whatever unit the source used),
-`currency` (defaults `INR`), `method`, `reason`, `occurred_at` (ISO-8601 UTC),
-`reference`, `raw` (the untouched payload). `email`, `phone`, `method`, `reason`
-are individually nullable — but a row with **neither** email nor phone is
-rejected (`no_contact_channel`): it's unreachable by any nudge. `phone` is
-normalized to E.164-ish (`+91XXXXXXXXXX` for a bare 10-digit number), `email` is
-lowercased and stripped; both idempotently. Every other field is required.
+The normalized row has the keys in `FIELDS` — `event_id`, `source`,
+`customer_id`, `email`, `phone`, `amount_paise` (integer paise, whatever unit
+the source used), `currency` (defaults `INR`), `method`, `reason`, `occurred_at`
+(ISO-8601 UTC), `reference` — **plus `raw`**, the untouched payload blob that
+deliberately sits outside the `FIELDS` column contract. `email`, `phone`,
+`method`, `reason` are individually nullable — but a row with **neither** email
+nor phone is rejected (`no_contact_channel`): it's unreachable by any nudge.
+`phone` is normalized to E.164-ish (`+91XXXXXXXXXX` for a bare 10-digit number),
+`email` is lowercased and stripped; both idempotently. Every other field is
+required.
 
 Dedupe is `event_id = f"{source}:{reference}"` on a `UNIQUE` column, where
 `reference` is the source's own business id (payment / checkout / invoice), not
 a delivery id — so a redelivery with a fresh envelope id still collapses,
-writing nothing and returning the stored row. Being a DB constraint, dedupe
-holds across restarts for a file-backed ingestor.
+writing nothing and returning the stored row. The `source` prefix means the same
+`reference` string from two different sources (`abandoned_cart:X1` vs
+`mandate_failure:X1`) does not collide. Being a DB constraint, dedupe holds
+across restarts for a file-backed ingestor.
 
 **Two entry points, different contracts.** `normalize()` is a pure function
 (no clock, no network) and *raises* `AdapterError` on bad input — good for unit
@@ -174,14 +178,15 @@ the offending payload to a `rejected_events` table with a short `reason_code`
 `no_contact_channel`), and returns `outcome=REJECTED`. A batch loop keeps going;
 `stats()` counts what happened.
 
-`tests/test_ingest.py`: three shapes in → one shape out (with email-only /
-phone-only / both / neither per source), dedupe holds and survives reopen, a
-missing optional field still yields the one shape, a missing required field /
-bad amount / bad timestamp / unknown source is quarantined (not raised) and the
-loop continues, a batch of 10 with 2 bad rows gives 8 inserted / 2 rejected with
-`stats()` matching, phone/email normalization is idempotent, and one
-`customer_id` fed via `card_failure` and via `abandoned_cart` lands on the same
-Slice 3 assignment.
+`tests/test_ingest.py` and `tests/test_ingest_slice4.py` cover: three shapes in
+→ one shape out (with email-only / phone-only / both / neither per source),
+dedupe holds and survives reopen, same `reference` from two sources does not
+collide, a missing optional field still yields the one shape, a missing required
+field / bad amount / bad timestamp / unknown source / no-contact row is
+quarantined (not raised) and the loop continues, a batch with bad rows reports
+`inserted` / `rejected` / `rejected_by_reason` instead of dying, phone/email
+normalization is idempotent, and one `customer_id` fed via `card_failure` and
+via `abandoned_cart` lands on the same Slice 3 assignment.
 
 ## Setup
 

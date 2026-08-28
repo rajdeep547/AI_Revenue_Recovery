@@ -399,11 +399,14 @@ class Ingestor:
         return self._conn.execute("SELECT COUNT(*) FROM normalized_events").fetchone()[0]
 
     def stats(self) -> dict:
-        """What this ingestor has done since construction."""
+        """What this ingestor has done since construction. ``rejected`` is the
+        total; ``rejected_by_reason`` breaks it down by ``reason_code``."""
+        by_reason = dict(sorted(self._rejected.items()))
         return {
             "inserted": self._inserted,
             "duplicate": self._duplicate,
-            "rejected_by_reason": dict(sorted(self._rejected.items())),
+            "rejected": sum(by_reason.values()),
+            "rejected_by_reason": by_reason,
         }
 
     def close(self) -> None:
