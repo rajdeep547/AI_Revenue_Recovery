@@ -94,40 +94,155 @@ directions, keyed off `error_reason`:
 
 ### Population calibration (default seed `20260826`)
 
+Values below are post-follow-up (arm/realized removed from datagen, so the
+per-customer draw order and the customer count changed):
+
 | target | value |
 |---|---|
-| mean `p_would_pay_anyway` ≈ 0.29 (baseline not moved) | **0.2892** |
-| mean `lift` ∈ [0.08, 0.12] | **0.1026** |
-| Pearson corr(base, lift) ≤ ≈ −0.4 | **−0.437** |
-| control arm share ≈ 0.30 | **0.292** (371 / 1272) |
+| mean `p_would_pay_anyway` ≈ 0.29 (baseline not moved) | **0.280** |
+| mean `lift` ∈ [0.08, 0.12] | **0.104** |
+| Pearson corr(base, lift) ≤ ≈ −0.4 | **−0.432** |
+| customers (to fill 2,000 failure-only events) | **1611** |
 
-Observed realised recovery rate: control **0.286**, treated **0.398**
-(diff **+11.3pp**).
+### Why the lift magnitude was chosen — power
 
-### Arm assignment and power
+Target mean lift ≈ 0.10 was picked for detectability by Slice 5. At a design
+scale of 2,000 customers with a 30% control split → 600 control / 1,400 treated
+and a baseline recovery rate ≈ 0.31, the SE of the control−treated difference in
+proportions is `sqrt(0.31·0.69·(1/600 + 1/1400)) ≈ 0.0226` (**~2.2pp**). A true
+10pp effect is then ≈ **4.4σ** — comfortably powered — while the near-zero lift
+on the infra buckets means a naïve estimator that ignores `error_reason` will
+understate or misattribute the effect. The 30% control share and the arm split
+itself now live in the eval harness, not in datagen.
 
-`arm = "control" if rng.random() < 0.30 else "treated"`, from the same seeded
-RNG. Control customers realise against `p_would_pay_anyway`, treated against
-`p_pay_if_nudged`. Arm and both probabilities live **only** in
-`ground_truth.json`; `events.json` leaks neither (only the observable
-consequence — a `payment.captured` for those who recovered).
+---
 
-Target mean lift ≈ 0.10 was chosen for detectability. At the design scale of
-2,000 customers → 600 control / 1,400 treated, with a baseline recovery rate
-≈ 0.31, the SE of the control−treated difference in proportions is
-`sqrt(0.31·0.69·(1/600 + 1/1400)) ≈ 0.0226` (**~2.2pp**). A true 10pp effect is
-then ≈ **4.4σ** — Slice 5 can cleanly tell "measurement works" from
-"measurement is broken", while the near-zero lift on the infra buckets means a
-naïve estimator that ignores `error_reason` will *understate* or misattribute
-the effect. At this seed's realised split (371 / 901) the SE is ≈ 2.97pp and
-the observed 11.3pp difference is ≈ 3.8σ.
+## Slice 3 follow-up · outcome resolution moved to `eval/environment.py`
 
-### New file hashes (SHA-256, default seed, `--events 2000`)
+### Why it moved
 
-The draw order changed with this amendment, so the Slice 3 hashes are
-superseded:
+Datagen previously assigned an arm, flipped the recovery coin, and wrote a
+`payment.captured` iff the flip won. Outcomes were baked at generation time, so:
+
+- **No downstream policy could change them.** Slice 5 would measure zero uplift
+  for *every* policy, a perfect one included — "measurement works" and
+  "measurement is broken" would look identical.
+- **Skipping a customer got their recovery for free.** A policy that took no
+  action on a customer who was pre-flipped to "recovered" would still be
+  credited with the capture.
+
+So datagen now stops at failures (plus the existing authorized-never-captured
+noise). Given a policy's action for a customer, whether the payment comes back
+is resolved by `eval/environment.py` — which is *not* pipeline and *may* read
+`ground_truth.json`.
+
+### How resolution works
+
+`Environment(ground_truth, run_seed=None).resolve(customer_id, action)` with
+`action ∈ {"none", "nudge"}`:
+
+- One uniform draw per customer, `u = sha256("{run_seed}:{customer_id}")[:8] >>
+  11 / 2**53`. **Not** from a shared RNG stream — so the result depends only on
+  `(run_seed, customer_id, action)`, never on call order or how many other
+  customers were resolved first. `run_seed` defaults to `ground_truth.meta.seed`.
+- `"none"` compares `u` to `p_would_pay_anyway`; `"nudge"` compares the *same*
+  `u` to `p_pay_if_nudged`.
+- Because `p_pay_if_nudged >= p_would_pay_anyway` and the draw is shared, the
+  set of nudge-recoveries is a superset of the none-recoveries — a monotone
+  coupling with no defiers. Policy comparisons are paired, replays are
+  byte-identical, and across the population
+  `P(resolve|nudge) − P(resolve|none)` equals the mean `lift`
+  (observed at the default seed: **0.3824 − 0.2787 = +0.1037**, vs mean `lift`
+  field 0.1042).
+
+`eval/` is excluded from the pipeline: the datagen grep test asserts zero hits
+under `app/` for both `ground_truth` and `eval.`.
+
+### File hashes (SHA-256, default seed, `--events 2000`)
+
+The follow-up changed the draw order again, so the amendment hashes
+(`d0d39c07…` / `4999ccf5…`) are superseded by:
 
 ```
-events.json        d0d39c07afa324eabe68fb03d67d53d256413f74394b98abdd9a4de1f066a08e
-ground_truth.json  4999ccf56e4c24eaefff2f95b07954caf9646187a61022c6c5337113cb6fdd08
+events.json        5d0f9bd5d96c82b91547a9d123c9b414efb1ad4555c701fec82321959cc89668
+ground_truth.json  8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad
 ```
+
+---
+
+## Ingest (`app/ingest.py`)
+
+### One row shape, three adapters
+
+Downstream stages (classifier, policy, eval) should never branch on where an
+event came from, so ingest collapses three native shapes into `FIELDS`:
+`event_id, source, customer_id, email, phone, amount_paise, currency, method,
+reason, occurred_at, reference` (+ `raw`). Adapters live in the `ADAPTERS`
+registry — adding a fourth source is a new entry, not a new code path elsewhere.
+
+- **`email`, `phone`, `method`, `reason` are individually nullable.** An
+  abandoned cart has no payment method and no failure reason; a card failure may
+  carry only one contact channel. Every other field is required — a missing
+  amount, customer id, reference or timestamp is an error.
+- **Amounts normalize to integer paise.** `card_failure` / `mandate_failure`
+  already send minor units (`int`); `abandoned_cart` sends a major-unit string
+  (`"1299.00"`) converted with `Decimal(...) * 100`, `ROUND_HALF_UP` — no binary
+  float rounding.
+- **Timestamps normalize to ISO-8601 UTC.** Unix seconds and `...Z` strings
+  both land as `2025-01-01T00:00:00+00:00`.
+- **Phone → E.164-ish, email → lowercased/stripped, both idempotently.** Strip
+  non-digits, drop a `00`/`0` international-or-trunk prefix, assume a bare
+  10-digit number is `+91` (Indian mobile). Re-running the cleaner on its own
+  output is a no-op — asserted by a test, because the same payload may be
+  ingested more than once and must dedupe on an identical row.
+- **`raw` keeps the original payload** for audit; nothing is lost.
+
+### Why at least one contact channel is required
+
+The whole point of the pipeline is to *reach* a customer and nudge them. A
+normalized row with neither email nor phone is a customer the decision engine
+can never act on: it can't be assigned a real treatment, it can't convert, and
+if it sits in the population it dilutes every measured rate (recovery, lift)
+with dead weight while consuming policy budget in any per-row accounting. It's
+not a data-quality nicety — a contactless row is *structurally* outside the
+thing being measured, so it's rejected at the door (`no_contact_channel`) rather
+than carried as a special case through classifier, policy and eval.
+
+### Why rejects are quarantined, not raised
+
+`Ingestor.ingest()` is built to be called in a loop over a batch or a stream.
+If a bad payload raised, the exception would unwind the loop and every good row
+*after* the bad one would be lost — one malformed webhook takes down the batch.
+So `ingest()` never raises on input: it catches `AdapterError`, writes
+`(source, reason_code, reason_detail, raw, rejected_at)` to `rejected_events`,
+and returns `outcome=REJECTED`. Rejection becomes a *data outcome* — countable
+via `stats()`, inspectable via `rejected()`, replayable from `raw` after a fix —
+instead of control flow. `normalize()` stays a pure function and keeps raising,
+so unit code and tests can still assert on the specific `reason_code`. The
+`reason_code` set is deliberately small and closed (`missing_required_field`,
+`unknown_source`, `bad_amount`, `bad_timestamp`, `no_contact_channel`) so
+`stats()["rejected_by_reason"]` is a triage histogram, not free text.
+
+### `stats()` counts this ingestor's session
+
+`inserted` / `duplicate` / `rejected_by_reason` are in-memory counters reset at
+construction. `count()` still reports the true table size (which includes rows
+from earlier sessions for a file-backed DB); `stats()` reports what *this*
+`Ingestor` instance did. Duplicates can't be counted any other way — a dedupe
+hit writes nothing.
+
+### customer_id namespace (gate for Slice 3)
+
+All three adapters emit `customer_id` as `str(<the source's own id>)` with **no
+source prefix**, and Slice 3's `Environment.resolve` keys purely on that string
+(`sha256(f"{run_seed}:{customer_id}")`). So the same customer arriving via
+`card_failure` and via `abandoned_cart` lands on the same assignment — verified
+by `test_customer_id_namespace_is_shared_across_adapters` and printed at
+re-gate time (`cust_00001` → same `resolve` both ways).
+
+### Not wired to HTTP yet
+
+This slice is a library: `normalize()` for the pure transform, `Ingestor` for
+transform + dedupe + quarantine + storage. No endpoint, and `app/db.py`'s
+`init_db` is untouched — the ingestor owns its `normalized_events` /
+`rejected_events` tables and creates them idempotently.

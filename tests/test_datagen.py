@@ -37,16 +37,28 @@ def test_different_seed_produces_different_output():
     assert gt1["customers"] != gt2["customers"]
 
 
-def test_every_customer_has_both_probabilities_and_an_arm():
+def test_every_customer_has_both_probabilities_and_a_reason():
     _, gt = datagen.generate_dataset()
     custs = gt["customers"]
     assert custs
     for c in custs.values():
         assert 0.0 <= c["p_would_pay_anyway"] <= 1.0
         assert 0.0 <= c["p_pay_if_nudged"] <= 1.0
-        assert c["arm"] in ("control", "treated")
-        assert isinstance(c["realized"], bool)
         assert c["error_reason"] in datagen._ERROR_REASONS
+        assert isinstance(c["amount"], int) and c["amount"] > 0
+        assert c["method"] in datagen._METHODS
+
+
+def test_ground_truth_has_no_outcome_fields():
+    """Arm assignment and the realization flip moved to eval/environment.py —
+    they are no longer datagen's business."""
+    _, gt = datagen.generate_dataset()
+    for c in gt["customers"].values():
+        assert "arm" not in c
+        assert "realized" not in c
+    blob = json.dumps(gt)
+    assert '"arm"' not in blob
+    assert '"realized"' not in blob
 
 
 def test_nudged_is_never_below_base_and_lift_is_the_gap():
@@ -78,25 +90,6 @@ def test_base_and_lift_are_negatively_correlated():
     assert datagen._pearson(base, lift) < -0.3
 
 
-def test_control_arm_share_is_near_30_percent():
-    _, gt = datagen.generate_dataset()
-    custs = list(gt["customers"].values())
-    share = sum(1 for c in custs if c["arm"] == "control") / len(custs)
-    assert abs(share - 0.30) < 0.035
-
-
-def test_control_realizes_against_base_treated_against_nudged():
-    """Sanity on the arm-dependent realization: treated recover at a clearly
-    higher rate than control, since lift is positive on average."""
-    _, gt = datagen.generate_dataset()
-    custs = list(gt["customers"].values())
-    ctrl = [c for c in custs if c["arm"] == "control"]
-    trt = [c for c in custs if c["arm"] == "treated"]
-    ctrl_rate = sum(c["realized"] for c in ctrl) / len(ctrl)
-    trt_rate = sum(c["realized"] for c in trt) / len(trt)
-    assert trt_rate > ctrl_rate
-
-
 def test_ground_truth_covers_every_payment_in_the_event_stream():
     events_doc, gt = datagen.generate_dataset()
     pay_ids_in_events = {
@@ -117,7 +110,7 @@ def test_every_failed_event_carries_an_error_reason():
         assert entity["error_reason"] in datagen._ERROR_REASONS
 
 
-def test_events_file_leaks_no_arm_probability_or_lift():
+def test_events_file_leaks_no_policy_or_probability_fields():
     events_doc, _ = datagen.generate_dataset()
     blob = json.dumps(events_doc)
     for token in (
@@ -131,6 +124,15 @@ def test_events_file_leaks_no_arm_probability_or_lift():
         "treated",
     ):
         assert token not in blob
+
+
+def test_events_stream_has_no_captured_events():
+    """Outcomes are not baked at generation time: the stream is failures plus
+    authorized-never-captured noise, nothing else."""
+    events_doc, _ = datagen.generate_dataset()
+    kinds = {e["payload"]["event"] for e in events_doc["events"]}
+    assert "payment.captured" not in kinds
+    assert kinds <= {"payment.failed", "payment.authorized"}
 
 
 def test_log_amount_is_approximately_normal_not_uniform():
@@ -147,14 +149,14 @@ def test_log_amount_is_approximately_normal_not_uniform():
     assert sum(amounts) / n > amounts[n // 2] * 1.15
 
 
-def test_no_pipeline_module_references_ground_truth():
-    """The grep from the Slice 3 break step, as an assertion: zero hits for
-    `ground_truth` anywhere under app/."""
-    hits = [
-        str(py.relative_to(REPO))
-        for py in (REPO / "app").rglob("*.py")
-        if "ground_truth" in py.read_text(encoding="utf-8")
-    ]
+def test_no_pipeline_module_references_holdout_code():
+    """The grep from the Slice 3 break step, as an assertion: zero hits under
+    app/ for the held-out data (`ground_truth`) or the eval harness (`eval.`)."""
+    forbidden = ("ground_truth", "eval.")
+    hits = []
+    for py in (REPO / "app").rglob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        hits += [f"{py.relative_to(REPO)}: {tok}" for tok in forbidden if tok in text]
     assert hits == []
 
 

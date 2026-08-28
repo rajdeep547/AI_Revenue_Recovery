@@ -9,15 +9,17 @@ Produces a fixed-size stream of Razorpay-shaped payment webhook events plus a
 Two outputs land in ``--out-dir``:
 
 * ``events.json`` — everything the pipeline (``app/``) is allowed to see:
-  ``payment.failed`` / ``payment.captured`` / ``payment.authorized`` deliveries,
-  a small cohort per customer, shaped like a real webhook body. Every failure
-  carries an ``error_reason`` (a permitted Slice 7 classifier feature). No arm,
-  no probabilities.
+  ``payment.failed`` deliveries plus a little ``payment.authorized`` noise that
+  never captures, a small cohort per customer, shaped like a real webhook body.
+  Every failure carries an ``error_reason`` (a permitted Slice 7 classifier
+  feature). No captures, no arm, no probabilities — whether a payment is ever
+  recovered is not decided here.
 * ``ground_truth.json`` — the counterfactual, per customer: ``error_reason``,
-  the experiment ``arm`` (30% control), ``p_would_pay_anyway`` (recovers with no
-  nudge), ``p_pay_if_nudged`` (recovers with a nudge; always >= the former), the
-  derived ``lift`` between them, and the arm-dependent ``realized`` outcome.
-  **No module under app/ may import or read it** — tests / evaluation only.
+  ``p_would_pay_anyway`` (recovers with no nudge), ``p_pay_if_nudged`` (recovers
+  with a nudge; always >= the former), the derived ``lift`` between them, plus
+  ``amount`` / ``method``. **No module under app/ may import or read it** —
+  tests / evaluation only. Resolving a policy's actions into recovered / not
+  outcomes lives in ``eval/environment.py``.
 
 Determinism: every random draw comes from one ``random.Random(seed)`` in a fixed
 order, every timestamp is derived from a constant epoch (never the wall clock),
@@ -105,10 +107,6 @@ _REASON_BETAS = {
     "otp_timeout":        (0.30,    16.0,    0.12,     14.0),
 }
 
-# Randomised-experiment arm split, drawn from the same seeded RNG. Control
-# customers realise against p_would_pay_anyway, treated against p_pay_if_nudged.
-_CONTROL_SHARE = 0.30
-
 _STATUS_FOR = {
     "payment.failed": "failed",
     "payment.captured": "captured",
@@ -136,16 +134,14 @@ def _ticket_amount(rng: random.Random) -> int:
     return int(amount)
 
 
-def _plan_events(rng: random.Random, realized: bool) -> list[str]:
-    """The event sequence for one customer. Always starts with a failure; a
-    captured event appears iff this customer realised a recovery under their
-    assigned arm."""
+def _plan_events(rng: random.Random) -> list[str]:
+    """The event sequence for one customer: failures only. Whether the payment
+    is ever recovered depends on a downstream policy, not on this generator, so
+    no captured event is emitted here. Always starts with a failure."""
     seq = ["payment.failed"]
     if rng.random() < 0.15:
         seq.append("payment.failed")            # a retry that also failed
-    if realized:
-        seq.append("payment.captured")
-    elif rng.random() < 0.08:
+    if rng.random() < 0.08:
         seq.append("payment.authorized")        # authorized, never captured — noise
     return seq
 
@@ -172,7 +168,7 @@ def generate_dataset(
         payment_id = f"pay_{cust_n:06d}"
 
         # Fixed per-customer draw order — do not reorder, it defines the bytes:
-        # error_reason, base prob, lift, ticket, method, arm, realisation, plan.
+        # error_reason, base prob, lift, ticket, method, event plan, gaps.
         error_reason = rng.choices(_ERROR_REASONS, _ERROR_REASON_WEIGHTS)[0]
         base_mean, base_k, lift_mean, lift_k = _REASON_BETAS[error_reason]
 
@@ -187,11 +183,8 @@ def generate_dataset(
 
         amount = _ticket_amount(rng)
         method = rng.choices(_METHODS, _METHOD_WEIGHTS)[0]
-        arm = "control" if rng.random() < _CONTROL_SHARE else "treated"
-        realize_p = base if arm == "control" else p_nudged
-        realized = rng.random() < realize_p
 
-        seq = _plan_events(rng, realized)[:remaining]
+        seq = _plan_events(rng)[:remaining]
 
         err_code, err_desc = _REASON_DETAIL[error_reason]
         for etype in seq:
@@ -225,11 +218,9 @@ def generate_dataset(
             "amount": amount,
             "method": method,
             "error_reason": error_reason,
-            "arm": arm,
             "p_would_pay_anyway": base,
             "p_pay_if_nudged": p_nudged,
             "lift": lift,
-            "realized": realized,
             "events_emitted": len(seq),
         }
 
@@ -311,8 +302,6 @@ def _summary(events_doc: dict, ground_truth_doc: dict) -> str:
     base = [c["p_would_pay_anyway"] for c in custs]
     nudged = [c["p_pay_if_nudged"] for c in custs]
     lift = [c["lift"] for c in custs]
-    n_control = sum(1 for c in custs if c["arm"] == "control")
-    n_realized = sum(1 for c in custs if c["realized"])
     ks = _ks_stat_normal([math.log(a) for a in amounts])
 
     lines = [
@@ -324,8 +313,6 @@ def _summary(events_doc: dict, ground_truth_doc: dict) -> str:
         f"  mean p_pay_if_nudged      {sum(nudged) / n:.4f}",
         f"  mean lift                 {sum(lift) / n:.4f}",
         f"  corr(base, lift)          {_pearson(base, lift):+.3f}",
-        f"  control arm share         {n_control / n:.3f}  ({n_control} / {n})",
-        f"  realized recoveries       {n_realized} / {n}",
         "ticket size (Rs):",
         f"  min {amounts[0] / 100:>10.0f}   median {_percentile(amounts, 0.50) / 100:>10.0f}"
         f"   mean {mean / 100:>10.0f}",
