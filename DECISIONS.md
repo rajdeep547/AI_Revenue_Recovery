@@ -168,6 +168,30 @@ events.json        5d0f9bd5d96c82b91547a9d123c9b414efb1ad4555c701fec82321959cc89
 ground_truth.json  8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad
 ```
 
+### Slice 5 prerequisite · `notes.customer_id` added to `events.json`
+
+Slices 1-4 and Slice 3's generator were never wired together: `events.json`
+entities carried no `customer_id`, `email`, or `phone` anywhere, so every
+generated event was rejected by `app/ingest.py`'s `card_failure` adapter with
+`missing_required_field: customer_id`. `customer_id` lived only in
+`ground_truth.json`, which `app/` may never read — so the fix could only be a
+generator change (approved before writing code, per the Slice 5 brief).
+
+Each event entity now carries a Razorpay-shaped `notes` object:
+`{"customer_id": customer_id, "email": f"{customer_id}@example.test"}`. Both
+values are deterministic functions of the `customer_id` already assigned
+earlier in the per-customer draw order (`cust_n` is sequential, not drawn from
+`rng`), so **no new `rng.*` call was added** — the fixed draw order
+(error_reason → base → lift → ticket → method → event plan → gaps) and every
+number in the population-calibration table above are unchanged. Only
+`events.json`'s bytes (and therefore its hash) change; `ground_truth.json`'s
+hash is confirmed identical:
+
+```
+events.json        5999f0ea6f48b1b3da9491f1471a84155e558f076ae8f249a81fc34b6003856a
+ground_truth.json  8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad  (unchanged)
+```
+
 ---
 
 ## Ingest (`app/ingest.py`)
@@ -259,3 +283,145 @@ This slice is a library: `normalize()` for the pure transform, `Ingestor` for
 transform + dedupe + quarantine + storage. No endpoint, and `app/db.py`'s
 `init_db` is untouched — the ingestor owns its `normalized_events` /
 `rejected_events` tables and creates them idempotently.
+
+---
+
+## Slice 5 · measurement (`eval/measurement.py`)
+
+### Approved spec deviation: assignment salt differs from `Environment`'s
+
+The brief specified hashing `sha256(f"{run_seed}:{customer_id}")` for arm
+assignment. The build instead hashes `f"assign:{run_seed}:{customer_id}"` —
+a one-line SPEC DEVIATION note sits at the top of `_uniform_assign` in
+`eval/measurement.py` stating this explicitly, promoted from an implicit
+choice to a named, approved deviation. Reusing the bare hash — the same one
+`eval/environment.py`'s outcome-resolution draw uses — would tie a
+customer's arm to the same uniform `u` used to decide whether they
+self-recover under `"none"`: every customer landing in "control" (`u >=
+0.7`) would be compared against `p_would_pay_anyway` values that are almost
+always < 0.7, crushing the control-arm recovery rate toward zero and
+inflating every measured uplift. The `"assign:"` prefix makes the two draws
+independent while both stay fully deterministic in `(seed, customer_id)`.
+
+### CI method: normal approximation (Wald), not bootstrap
+
+Arm sizes run in the hundreds-to-low-thousands (treatment ≈1,100–1,400,
+control ≈500–600 at the default 2,000-event dataset) and recovery rates sit
+well away from 0/1 (≈0.28–0.38) — the binomial-proportion CLT already holds
+comfortably at that scale, the same normal approximation DECISIONS.md's power
+section uses to justify the chosen lift magnitude. A bootstrap would produce
+the same interval for materially more compute, so Wald was used:
+`uplift ± 1.96 * sqrt(p_t(1-p_t)/n_t + p_c(1-p_c)/n_c)`.
+
+### Control is always `"none"`; policy only governs treatment
+
+`run_policy` resolves every control-arm customer under action `"none"`
+regardless of the policy under test, and only asks `policy(row)` for
+treatment-arm customers. This is what makes "uplift" a causal-shaped
+quantity rather than a comparison of two arbitrary groups: it is always
+policy-under-treatment vs. the same population's do-nothing counterfactual.
+
+### Population is normalized rows, not raw JSON
+
+`load_population` runs `events.json` through the real `card_failure` adapter
+and a real `Ingestor` (in-memory), never touching the raw event dicts
+directly. Because every event for one customer in datagen shares the same
+Razorpay payment id, `Ingestor`'s `source:reference` dedupe collapses a
+customer's failure + retry + noise events into a single row for free — the
+population handed to `run_policy` is naturally one row per customer.
+
+### Population invariant: one row per `customer_id`, enforced not assumed
+
+That "naturally one row per customer" claim was, until the Slice 5 hardening
+pass, an unchecked accident of how datagen happens to reuse one payment
+reference per customer — a **latent risk, not a live bug**: nothing in
+today's dataset ever triggers it (every customer has exactly one payment
+id), but nothing was stopping a future datagen change, a hand-built fixture,
+or a real production feed from putting two distinct payment references on
+one customer. Assignment (`assign_arm`) is customer-level; if that ever
+happened, `Ingestor` would correctly *not* dedupe the two rows (different
+`reference` ⇒ different `event_id`), both would land in the same arm
+(assignment doesn't care how many rows a customer has), and the
+recovery-rate denominator would silently become event-level while the Wald
+CI is still computed as though every observation were independent —
+narrowing it on correlated data, with every uplift number quietly wrong and
+nothing failing loudly. `load_population` now counts rows per `customer_id`
+with `Counter` after ingesting and raises `DuplicateCustomerRows` — a real
+exception, not an `assert` (asserts vanish under `-O`, and this must hold in
+production) — carrying both the offending `customer_id`s and their row
+counts if the invariant doesn't hold. Covered by
+`test_load_population_raises_on_duplicate_customer_id`, which constructs
+exactly that two-distinct-payment-id customer through the real adapter +
+`Ingestor` and asserts the invariant fires with the right customer_id and
+count (`{"cust_dup": 2}`).
+
+### Rejected events are excluded, not silently dropped
+
+Before this pass, `rejected: 0` on the real dataset meant the
+exclude-and-count path had never actually fired in a test.
+`test_contactless_event_is_rejected_counted_and_excluded_from_experiment`
+adds one synthetic event with a `customer_id` but no email/phone at all,
+confirms it is (a) quarantined with `reason_code = no_contact_channel` and
+counted in `stats()["rejected_by_reason"]`, (b) absent from `load_population`'s
+returned rows, and (c) absent from either arm's denominator when the
+resulting rows are run through `run_policy` — `treatment.n + control.n`
+equals the count of *contactable* customers only.
+
+### Slice 5 prerequisite, and why it needed sign-off
+
+Before this slice, `events.json` carried no `customer_id`, `email`, or
+`phone` anywhere — only `ground_truth.json` (which `app/` may never read)
+had it — so every generated event was rejected by `card_failure` with
+`missing_required_field: customer_id`. The generator change that fixed this
+(`notes.customer_id` + a synthetic email, see the Slice 3 section above) was
+proposed and approved before any Slice 5 code was written, per the brief's
+explicit instruction to stop and ask rather than quietly patch around it.
+
+### BREAK(b): assert against the treatment arm's true lift, not the population's
+
+`recover_everything`'s CI is treatment-vs-control on whichever ~1,100
+customers the hash happened to put in treatment for this seed. That
+subset's true mean lift (from `ground_truth.json`, test-only) is itself a
+sample from the population and will drift from the population-wide 0.1042
+by chance — asserting the CI brackets 0.1042 asserts against the wrong
+denominator. The test now computes `treatment_true_lift` by filtering
+`ground_truth.json`'s `lift` field to exactly the customer_ids that
+`assign_arm` puts in treatment, and asserts the CI brackets *that* value.
+At the default seed the drift is small (population 0.1042 vs. treatment-arm
+0.1039, drift −0.0003) but the test would still be correct if it weren't.
+
+### BREAK(c) tolerance: ±3σ, justified from the binomial SE
+
+Arm assignment is one independent Bernoulli(0.7) trial per customer (now
+provably one trial per customer — see the population invariant above), so
+the observed treatment ratio's binomial SE is `sqrt(p(1-p)/n)`. At n=1,611,
+p=0.7: `sqrt(0.7·0.3/1611) ≈ 0.0114` (~1.1 percentage points). The test uses
+a ±3σ band (`≈ 0.0343`) — wide enough that a correct hash essentially never
+fails it, tight enough that a biased or broken assignment function (which
+would shift the ratio by many SEs, as the do-nothing case demonstrates for
+outcome resolution) is still caught.
+
+### Report (default seed `20260826`, `--events 2000`)
+
+```
+ingest stats           {'inserted': 1611, 'duplicate': 389, 'rejected': 0, 'rejected_by_reason': {}}
+population size        1611
+unique customer_ids    1611  (must be equal -- enforced by load_population)
+split                  treatment=1126 (0.699)  control=485 (0.301)
+mean lift              population=0.1042  treatment-arm=0.1039  drift=-0.0003
+
+do_nothing           uplift +0.0005  95% CI [-0.0472, +0.0482]  treatment n=1126 rate=0.2789  control n=485 rate=0.2784
+recover_everything   uplift +0.0991  95% CI [+0.0502, +0.1480]  treatment n=1126 rate=0.3774  control n=485 rate=0.2784
+targeted_card        uplift +0.0414  95% CI [-0.0069, +0.0897]  treatment n=1126 rate=0.3197  control n=485 rate=0.2784
+```
+
+`do_nothing`'s CI straddles zero (PASS gate, unchanged by this hardening
+pass) and `recover_everything`'s CI (`[+0.0502, +0.1480]`) clearly excludes
+zero and brackets both the population mean lift and the treatment-arm-only
+true lift (0.1039). `targeted_card` — nudge only `expired_card` /
+`invalid_card`, the high-lift buckets — recovers ~42% of
+`recover_everything`'s uplift while nudging the same treatment population,
+i.e. concentrating sends on the customers datagen built to actually respond;
+its CI still touches zero at this sample size, which is expected and not a
+failure of measurement. Population size (1,611) equals the unique
+customer_id count (1,611) — the invariant holds on the real dataset.

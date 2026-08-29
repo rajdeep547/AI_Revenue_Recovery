@@ -12,7 +12,9 @@ Two outputs land in ``--out-dir``:
   ``payment.failed`` deliveries plus a little ``payment.authorized`` noise that
   never captures, a small cohort per customer, shaped like a real webhook body.
   Every failure carries an ``error_reason`` (a permitted Slice 7 classifier
-  feature). No captures, no arm, no probabilities — whether a payment is ever
+  feature) plus a merchant ``notes`` object (``customer_id`` and a synthetic
+  email) so ingest's ``card_failure`` adapter can identify and reach the
+  customer. No captures, no arm, no probabilities — whether a payment is ever
   recovered is not decided here.
 * ``ground_truth.json`` — the counterfactual, per customer: ``error_reason``,
   ``p_would_pay_anyway`` (recovers with no nudge), ``p_pay_if_nudged`` (recovers
@@ -194,6 +196,15 @@ def generate_dataset(
                 "amount": amount,
                 "method": method,
                 "status": _STATUS_FOR[etype],
+                # Razorpay echoes back merchant-supplied notes on every webhook
+                # for a payment. customer_id + a reachable contact channel are
+                # not randomly drawn -- they're deterministic functions of the
+                # customer_id already assigned above, so this does not touch
+                # the fixed per-customer rng draw order.
+                "notes": {
+                    "customer_id": customer_id,
+                    "email": f"{customer_id}@example.test",
+                },
             }
             if etype == "payment.failed":
                 # error_reason is a permitted feature; error_code/description
