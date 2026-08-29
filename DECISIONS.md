@@ -425,3 +425,58 @@ i.e. concentrating sends on the customers datagen built to actually respond;
 its CI still touches zero at this sample size, which is expected and not a
 failure of measurement. Population size (1,611) equals the unique
 customer_id count (1,611) — the invariant holds on the real dataset.
+
+---
+
+## Slice 6 · rules diagnosis (`app/diagnosis.py`, `eval/diagnosis_audit.py`)
+
+### The map is built from `error_code` alone, on purpose
+
+`app/diagnosis.py`'s `diagnose()` deliberately ignores the normalized row's
+`reason` field, which already equals `error_reason` in this dataset and
+would make diagnosis a trivial identity lookup — nothing to get wrong,
+nothing to learn. Instead it re-derives root cause from the raw
+`error_code` on the original payload, the way a real gateway integration
+that doesn't expose a clean semantic enum would have to. Razorpay's two
+codes collapse six error reasons: `GATEWAY_ERROR` covers `{bank_downtime
+.18, gateway_timeout .14}`; `BAD_REQUEST_ERROR` covers `{expired_card .10,
+invalid_card .08, insufficient_funds .28, otp_timeout .22}`. The map —
+built from that frequency table before touching a single real event —
+picks each code's majority class: `GATEWAY_ERROR → bank_downtime`,
+`BAD_REQUEST_ERROR → insufficient_funds`. It's a majority-vote default and
+nothing else, so the confusion matrix measures exactly what a code-only
+signal buys you.
+
+### Hand labels come from `error_description`, never `error_reason`
+
+`eval/diagnosis_audit.py`'s `HAND_LABEL_BY_DESCRIPTION` maps the six fixed
+`error_description` strings datagen writes back to their root cause — the
+same reading a human triager would do, recorded as a lookup rather than
+shortcut around. It never reads `error_reason` (present in the same raw
+payload but unused) or `ground_truth.json`, so the hand labels are a
+genuinely independent check on the code-only classifier, not a peek at the
+answer key.
+
+### Confusion matrix on the first 100 real failure rows (seed `20260826`)
+
+```
+true \ pred         bank_downtime       gateway_timeout     expired_card        invalid_card        insufficient_funds  otp_timeout
+bank_downtime       19                  0                   0                   0                   0                   0            recall=1.00 n=19
+gateway_timeout     11                  0                   0                   0                   0                   0            recall=0.00 n=11
+expired_card        0                   0                   0                   0                   12                  0            recall=0.00 n=12
+invalid_card        0                   0                   0                   0                   10                  0            recall=0.00 n=10
+insufficient_funds  0                   0                   0                   0                   20                  0            recall=1.00 n=20
+otp_timeout         0                   0                   0                   0                   28                  0            recall=0.00 n=28
+```
+
+**Worst class: `otp_timeout`, 28/28 misclassified.** Failure mode:
+`error_code` alone can't separate `BAD_REQUEST_ERROR`'s four sub-causes,
+and the majority-vote default (`insufficient_funds`) silently absorbs every
+`otp_timeout` event. `gateway_timeout`, `expired_card`, and `invalid_card`
+are also always wrong (100% error rate, same as `otp_timeout`) — but
+`otp_timeout` is the worst *by volume*: it's `BAD_REQUEST_ERROR`'s
+second-largest true class (0.22, behind only `insufficient_funds` at 0.28),
+so among the four always-wrong sub-causes it has the most instances in any
+real sample. `bank_downtime` and `insufficient_funds` — the two majority
+defaults — recover perfectly (100% recall), because the map was built to
+default to exactly them.

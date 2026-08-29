@@ -1,0 +1,18 @@
+{
+  "signal_paths": [
+    "payload.payload.payment.entity.error_code",
+    "payload.payload.payment.entity.method"
+  ],
+  "join": ":",
+  "map": {
+    "GATEWAY_ERROR:upi": "bank_downtime",
+    "GATEWAY_ERROR:netbanking": "bank_downtime",
+    "GATEWAY_ERROR:card": "gateway_timeout",
+    "GATEWAY_ERROR:wallet": "gateway_timeout",
+    "BAD_REQUEST_ERROR:upi": "otp_timeout",
+    "BAD_REQUEST_ERROR:netbanking": "insufficient_funds",
+    "BAD_REQUEST_ERROR:card": "invalid_card",
+    "BAD_REQUEST_ERROR:wallet": "insufficient_funds"
+  },
+  "default": "unknown"
+}

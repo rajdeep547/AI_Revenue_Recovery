@@ -1,0 +1,2802 @@
+[
+  {
+    "id": "evt_00159",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735808588,
+      "event_id": "evt_00159",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 54900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000122",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00122",
+                "email": "cust_00122@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00138",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735797878,
+      "event_id": "evt_00138",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 19900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000106",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00106",
+                "email": "cust_00106@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00171",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735817719,
+      "event_id": "evt_00171",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 138000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000132",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00132",
+                "email": "cust_00132@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00044",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735723169,
+      "event_id": "evt_00044",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 129900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000032",
+              "method": "netbanking",
+              "notes": {
+                "customer_id": "cust_00032",
+                "email": "cust_00032@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00017",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735703394,
+      "event_id": "evt_00017",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 40200,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000014",
+              "method": "wallet",
+              "notes": {
+                "customer_id": "cust_00014",
+                "email": "cust_00014@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00001",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735689654,
+      "event_id": "evt_00001",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 163000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000001",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00001",
+                "email": "cust_00001@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00146",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735803618,
+      "event_id": "evt_00146",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 5400,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000112",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00112",
+                "email": "cust_00112@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00119",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735787449,
+      "event_id": "evt_00119",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 55000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000091",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00091",
+                "email": "cust_00091@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00177",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735821108,
+      "event_id": "evt_00177",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 29900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000136",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00136",
+                "email": "cust_00136@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00047",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735723715,
+      "event_id": "evt_00047",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 64000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000034",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00034",
+                "email": "cust_00034@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00983",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1736547766,
+      "event_id": "evt_00983",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 79000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000789",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00789",
+                "email": "cust_00789@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00027",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735711286,
+      "event_id": "evt_00027",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 18000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000022",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00022",
+                "email": "cust_00022@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00016",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735701920,
+      "event_id": "evt_00016",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 379900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000013",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00013",
+                "email": "cust_00013@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00068",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735741129,
+      "event_id": "evt_00068",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 24900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000053",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00053",
+                "email": "cust_00053@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00158",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735808376,
+      "event_id": "evt_00158",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 65000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000121",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00121",
+                "email": "cust_00121@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00021",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735705938,
+      "event_id": "evt_00021",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 44900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000018",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00018",
+                "email": "cust_00018@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00266",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735903989,
+      "event_id": "evt_00266",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 4900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000206",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00206",
+                "email": "cust_00206@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00195",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735839613,
+      "event_id": "evt_00195",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 29900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000150",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00150",
+                "email": "cust_00150@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00121",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735788218,
+      "event_id": "evt_00121",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 27300,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000093",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00093",
+                "email": "cust_00093@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00061",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735736368,
+      "event_id": "evt_00061",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 34900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000046",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00046",
+                "email": "cust_00046@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_01773",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1737231265,
+      "event_id": "evt_01773",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 34900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_001436",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_01436",
+                "email": "cust_01436@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00104",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735775168,
+      "event_id": "evt_00104",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 424900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000081",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00081",
+                "email": "cust_00081@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00056",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735733320,
+      "event_id": "evt_00056",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 160000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000042",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00042",
+                "email": "cust_00042@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00013",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735699639,
+      "event_id": "evt_00013",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 61000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000011",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00011",
+                "email": "cust_00011@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00034",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735717159,
+      "event_id": "evt_00034",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 34900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000027",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00027",
+                "email": "cust_00027@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00066",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735740456,
+      "event_id": "evt_00066",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 60000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000051",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00051",
+                "email": "cust_00051@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00070",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735742066,
+      "event_id": "evt_00070",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 59900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000055",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00055",
+                "email": "cust_00055@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00106",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735776384,
+      "event_id": "evt_00106",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 161000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000083",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00083",
+                "email": "cust_00083@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00109",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735779451,
+      "event_id": "evt_00109",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 127000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000084",
+              "method": "wallet",
+              "notes": {
+                "customer_id": "cust_00084",
+                "email": "cust_00084@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_01162",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1736703793,
+      "event_id": "evt_01162",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 44900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000935",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00935",
+                "email": "cust_00935@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00101",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735771876,
+      "event_id": "evt_00101",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 510000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000078",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00078",
+                "email": "cust_00078@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00041",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735722546,
+      "event_id": "evt_00041",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 29900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000031",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00031",
+                "email": "cust_00031@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00020",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735705890,
+      "event_id": "evt_00020",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 244000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000017",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00017",
+                "email": "cust_00017@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00028",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735712305,
+      "event_id": "evt_00028",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 24900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000023",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00023",
+                "email": "cust_00023@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00031",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735714683,
+      "event_id": "evt_00031",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 74000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000025",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00025",
+                "email": "cust_00025@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00185",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735832333,
+      "event_id": "evt_00185",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 123000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000142",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00142",
+                "email": "cust_00142@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00062",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735736692,
+      "event_id": "evt_00062",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 19900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000047",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00047",
+                "email": "cust_00047@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00030",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735713776,
+      "event_id": "evt_00030",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 35500,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000024",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00024",
+                "email": "cust_00024@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00078",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735747696,
+      "event_id": "evt_00078",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 107000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000061",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00061",
+                "email": "cust_00061@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00007",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735697217,
+      "event_id": "evt_00007",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 13900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000007",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00007",
+                "email": "cust_00007@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00071",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735743268,
+      "event_id": "evt_00071",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 19900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000056",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00056",
+                "email": "cust_00056@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00189",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735835533,
+      "event_id": "evt_00189",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 39900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000146",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00146",
+                "email": "cust_00146@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00026",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735710698,
+      "event_id": "evt_00026",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 150000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000021",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00021",
+                "email": "cust_00021@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00097",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735768878,
+      "event_id": "evt_00097",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 239900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000074",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00074",
+                "email": "cust_00074@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00093",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735764874,
+      "event_id": "evt_00093",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 14900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000072",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00072",
+                "email": "cust_00072@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00105",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735775596,
+      "event_id": "evt_00105",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 134900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000082",
+              "method": "netbanking",
+              "notes": {
+                "customer_id": "cust_00082",
+                "email": "cust_00082@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00075",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735744859,
+      "event_id": "evt_00075",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 51000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000059",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00059",
+                "email": "cust_00059@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00018",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735704756,
+      "event_id": "evt_00018",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 56000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000015",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00015",
+                "email": "cust_00015@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00099",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735770590,
+      "event_id": "evt_00099",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 29900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000076",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00076",
+                "email": "cust_00076@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00054",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735731619,
+      "event_id": "evt_00054",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 58000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000040",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00040",
+                "email": "cust_00040@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00003",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735691315,
+      "event_id": "evt_00003",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 74900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000003",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00003",
+                "email": "cust_00003@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00160",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735808972,
+      "event_id": "evt_00160",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 9900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000123",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00123",
+                "email": "cust_00123@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00050",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735725268,
+      "event_id": "evt_00050",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 119900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000036",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00036",
+                "email": "cust_00036@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00060",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735735814,
+      "event_id": "evt_00060",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 104000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000045",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00045",
+                "email": "cust_00045@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00064",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735738446,
+      "event_id": "evt_00064",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 27300,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000049",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00049",
+                "email": "cust_00049@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00086",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735756760,
+      "event_id": "evt_00086",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 60000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000068",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00068",
+                "email": "cust_00068@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00010",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735698669,
+      "event_id": "evt_00010",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 22300,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000009",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00009",
+                "email": "cust_00009@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00005",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735695106,
+      "event_id": "evt_00005",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 47300,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000005",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00005",
+                "email": "cust_00005@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00015",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735701171,
+      "event_id": "evt_00015",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 24900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000012",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00012",
+                "email": "cust_00012@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00087",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735757869,
+      "event_id": "evt_00087",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 46700,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000069",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00069",
+                "email": "cust_00069@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00110",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735779944,
+      "event_id": "evt_00110",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 80000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000085",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00085",
+                "email": "cust_00085@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00019",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735705412,
+      "event_id": "evt_00019",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 84000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000016",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00016",
+                "email": "cust_00016@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00059",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735734571,
+      "event_id": "evt_00059",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 1039900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000044",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00044",
+                "email": "cust_00044@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00081",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735751191,
+      "event_id": "evt_00081",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 29900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000064",
+              "method": "netbanking",
+              "notes": {
+                "customer_id": "cust_00064",
+                "email": "cust_00064@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00074",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735744557,
+      "event_id": "evt_00074",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 9900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000058",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00058",
+                "email": "cust_00058@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00490",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1736104359,
+      "event_id": "evt_00490",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 284900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000386",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00386",
+                "email": "cust_00386@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00057",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735733368,
+      "event_id": "evt_00057",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 25400,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000043",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00043",
+                "email": "cust_00043@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00032",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735715581,
+      "event_id": "evt_00032",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 89000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000026",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00026",
+                "email": "cust_00026@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00115",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735784231,
+      "event_id": "evt_00115",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 319900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000088",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00088",
+                "email": "cust_00088@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00080",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735750547,
+      "event_id": "evt_00080",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 114900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000063",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00063",
+                "email": "cust_00063@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00051",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735725609,
+      "event_id": "evt_00051",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 11200,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000037",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00037",
+                "email": "cust_00037@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00036",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735719466,
+      "event_id": "evt_00036",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 10300,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000028",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00028",
+                "email": "cust_00028@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00299",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735932456,
+      "event_id": "evt_00299",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 62000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000234",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00234",
+                "email": "cust_00234@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00002",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735691076,
+      "event_id": "evt_00002",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 154900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000002",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00002",
+                "email": "cust_00002@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00004",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735693417,
+      "event_id": "evt_00004",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 77000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000004",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00004",
+                "email": "cust_00004@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_01764",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1737227616,
+      "event_id": "evt_01764",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 105000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_001428",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_01428",
+                "email": "cust_01428@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00067",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735740669,
+      "event_id": "evt_00067",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 89900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000052",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00052",
+                "email": "cust_00052@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00055",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735732499,
+      "event_id": "evt_00055",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 34900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000041",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00041",
+                "email": "cust_00041@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00011",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735699461,
+      "event_id": "evt_00011",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 24900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000010",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00010",
+                "email": "cust_00010@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00140",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735798807,
+      "event_id": "evt_00140",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 74000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000108",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00108",
+                "email": "cust_00108@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00006",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735696935,
+      "event_id": "evt_00006",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 169900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000006",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00006",
+                "email": "cust_00006@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00038",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735719849,
+      "event_id": "evt_00038",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 89900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000029",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00029",
+                "email": "cust_00029@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00130",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735794095,
+      "event_id": "evt_00130",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 49900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000100",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00100",
+                "email": "cust_00100@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00039",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735720037,
+      "event_id": "evt_00039",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 5900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000030",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00030",
+                "email": "cust_00030@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00072",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735743573,
+      "event_id": "evt_00072",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 14900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000057",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00057",
+                "email": "cust_00057@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00229",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735868409,
+      "event_id": "evt_00229",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 39500,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000176",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00176",
+                "email": "cust_00176@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00053",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735731182,
+      "event_id": "evt_00053",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 24900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000039",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00039",
+                "email": "cust_00039@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00163",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735811485,
+      "event_id": "evt_00163",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 19900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000126",
+              "method": "netbanking",
+              "notes": {
+                "customer_id": "cust_00126",
+                "email": "cust_00126@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00046",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735723650,
+      "event_id": "evt_00046",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 49900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000033",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00033",
+                "email": "cust_00033@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00065",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735738611,
+      "event_id": "evt_00065",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 4900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000050",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00050",
+                "email": "cust_00050@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00084",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735753845,
+      "event_id": "evt_00084",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 127000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000066",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00066",
+                "email": "cust_00066@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00023",
+    "label": "gateway_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735707370,
+      "event_id": "evt_00023",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 39900,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "gateway timed out before confirmation",
+              "id": "pay_000019",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00019",
+                "email": "cust_00019@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00161",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735809462,
+      "event_id": "evt_00161",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 169000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_000124",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00124",
+                "email": "cust_00124@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00025",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735709475,
+      "event_id": "evt_00025",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 227000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000020",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00020",
+                "email": "cust_00020@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00069",
+    "label": "insufficient_funds",
+    "note": "",
+    "payload": {
+      "created_at": 1735741422,
+      "event_id": "evt_00069",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 54000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "payment failed due to insufficient funds",
+              "id": "pay_000054",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00054",
+                "email": "cust_00054@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_01638",
+    "label": "invalid_card",
+    "note": "",
+    "payload": {
+      "created_at": 1737105142,
+      "event_id": "evt_01638",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 4900,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card number or CVV is invalid",
+              "id": "pay_001326",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_01326",
+                "email": "cust_01326@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00052",
+    "label": "expired_card",
+    "note": "",
+    "payload": {
+      "created_at": 1735727409,
+      "event_id": "evt_00052",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 144000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "card has expired",
+              "id": "pay_000038",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00038",
+                "email": "cust_00038@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00009",
+    "label": "otp_timeout",
+    "note": "",
+    "payload": {
+      "created_at": 1735698437,
+      "event_id": "evt_00009",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 106000,
+              "error_code": "BAD_REQUEST_ERROR",
+              "error_description": "3DS/OTP was not completed in time",
+              "id": "pay_000008",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00008",
+                "email": "cust_00008@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00063",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735737219,
+      "event_id": "evt_00063",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 85000,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000048",
+              "method": "card",
+              "notes": {
+                "customer_id": "cust_00048",
+                "email": "cust_00048@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_00049",
+    "label": "bank_downtime",
+    "note": "",
+    "payload": {
+      "created_at": 1735724322,
+      "event_id": "evt_00049",
+      "payload": {
+        "event": "payment.failed",
+        "payload": {
+          "payment": {
+            "entity": {
+              "amount": 39300,
+              "error_code": "GATEWAY_ERROR",
+              "error_description": "issuer or UPI bank temporarily unavailable",
+              "id": "pay_000035",
+              "method": "upi",
+              "notes": {
+                "customer_id": "cust_00035",
+                "email": "cust_00035@example.test"
+              },
+              "status": "failed"
+            }
+          }
+        }
+      }
+    }
+  }
+]
