@@ -1,5 +1,86 @@
 # Decisions
 
+## Slice 1 · webhook receiver (`app/main.py`, `app/db.py`, `app/security.py`)
+
+`POST /webhooks/razorpay` is the single ingress, and the order of
+operations *is* the design:
+
+1. Read the raw request bytes.
+2. Verify `X-Razorpay-Signature` as a hex HMAC-SHA256 of *those bytes*
+   under `RAZORPAY_WEBHOOK_SECRET`, constant-time compared. Mismatch →
+   `401`, nothing stored, `json` never touched.
+3. `INSERT OR IGNORE` the raw `(event_id, headers, body)` into
+   `webhook_events` *before* the body is parsed, so no delivery is lost to
+   a parser bug and a redelivered `X-Razorpay-Event-Id` dedupes at the DB
+   (`event_id` is `UNIQUE`) — still `200`, no second row.
+4. Only now `json.loads`. Malformed JSON → `400`, the raw row already
+   persisted, the process still serving (`/healthz` answers afterward).
+
+Verify-before-store keeps attacker-supplied bytes out of the parser and
+business logic until the signature checks out; store-before-parse keeps an
+authentic delivery from being dropped because parsing choked. Covered by
+`tests/test_webhook.py` (4 tests): bad signature → `401` with the row
+count unchanged; duplicate `x-razorpay-event-id` → `200` twice, exactly
+one row; `{"broken":` → `400` then `/healthz` still `200`.
+
+### OPEN ITEM — the Pass condition has never been observed green
+
+Slice 1's Pass condition is a **live Razorpay test-mode payment landing in
+`webhook_events.db`**, and that has not happened. `uvicorn.log` is the
+only record of real inbound traffic, and every delivery from Razorpay's
+egress (`52.66.75.174`, AWS Mumbai) is `401 Unauthorized` — the configured
+secret never matched a real signature — so `store_raw_event` was never
+reached and no webhook body from a real delivery has ever been persisted.
+Everything below the signature check (store → parse → `200`, the
+payment-entity extraction in `_extract_payment_entity`, and all of Slice
+2's state machine) is exercised **only** by synthetic payloads in the test
+suite. The `payload.payload.payment.entity` shape the code parses is taken
+from Razorpay's webhook **documentation**, not from an observed delivery.
+This is outstanding, not done — the end-to-end path from Razorpay's
+servers to a stored row is unverified.
+
+---
+
+## Slice 2 · payment-keyed domain model + trace (`app/main.py`, `app/db.py`)
+
+Slice 1 stored deliveries; Slice 2 makes the **payment** the domain
+entity. `app/db.py` gains two tables: `events`, keyed by `payment_id`
+(`payload.payload.payment.entity.id`) holding `amount`, `method`,
+`status`, and the first/last `event_id` seen for that payment; and
+`audit`, an append-only trail keyed by `payment_id` that records the
+`event_id` of the delivery behind each row. Append-only is enforced *in
+SQLite*, not in app code: `BEFORE UPDATE` and `BEFORE DELETE` triggers
+`RAISE(ABORT, …)` on `audit`, so no code path, bug, or raw SQL console can
+rewrite history.
+
+The handler runs a small state machine over `{payment.failed,
+payment.captured}` — any other event type, or a payload with no
+`payment_id`, is `unhandled_event_type` logged against the delivery only,
+with no `events` row touched:
+
+- `ingested` — first sighting of a payment (`failed` on a new payment, or
+  a `captured` with no prior row; the latter is `status=captured`, not a
+  recovery, because nothing here ever saw it fail).
+- `outcome_observed` — `captured` arriving for a payment currently
+  `failed` → `status=recovered`. This is the recovery signal the domain
+  model exists to capture (later slices measure recovery from the datagen
+  corpus and `eval/environment.py`, not from this table).
+- `duplicate_delivery` — a redelivery that changes no state (raw
+  `event_id` seen before, caught before parsing; or a second `captured`
+  on an already-recovered payment).
+
+`GET /events/{payment_id}/trace` returns the `events` row plus its ordered
+audit history — ordered by `created_at` then the autoincrement `id`, so
+two entries written in the same instant still read back in insertion
+order. An unknown `payment_id` → `404`, never a `500`. Covered by
+`tests/test_trace.py` (9 tests), including the failed→recovered path
+producing one `events` row and two audit rows, a redelivered `captured`
+adding a duplicate but only one `outcome_observed`, timestamp-collision
+ordering, and both the `UPDATE audit` and `DELETE FROM audit` triggers
+firing at the DB level.
+
+---
+
 ## Slice 3 · data generator (`datagen.py`)
 
 ### Seed and determinism
@@ -428,55 +509,232 @@ customer_id count (1,611) — the invariant holds on the real dataset.
 
 ---
 
-## Slice 6 · rules diagnosis (`app/diagnosis.py`, `eval/diagnosis_audit.py`)
+## Slice 6 · rules diagnosis (`app/diagnosis.py`, `tools/label_harness.py`)
 
 ### The map is built from `error_code` alone, on purpose
 
-`app/diagnosis.py`'s `diagnose()` deliberately ignores the normalized row's
-`reason` field, which already equals `error_reason` in this dataset and
-would make diagnosis a trivial identity lookup — nothing to get wrong,
-nothing to learn. Instead it re-derives root cause from the raw
-`error_code` on the original payload, the way a real gateway integration
-that doesn't expose a clean semantic enum would have to. Razorpay's two
-codes collapse six error reasons: `GATEWAY_ERROR` covers `{bank_downtime
-.18, gateway_timeout .14}`; `BAD_REQUEST_ERROR` covers `{expired_card .10,
-invalid_card .08, insufficient_funds .28, otp_timeout .22}`. The map —
-built from that frequency table before touching a single real event —
-picks each code's majority class: `GATEWAY_ERROR → bank_downtime`,
-`BAD_REQUEST_ERROR → insufficient_funds`. It's a majority-vote default and
-nothing else, so the confusion matrix measures exactly what a code-only
-signal buys you.
+`app/diagnosis.py`'s `diagnose()` reads **only** the raw Razorpay
+`error_code` off the preserved payload. It deliberately ignores the
+normalized row's `reason` field, which in this dataset simply *is*
+`error_reason` (the generator's own label) and would make diagnosis a
+trivial identity lookup — nothing to get wrong, nothing to learn. Re-deriving
+from `error_code` is the way a real gateway integration that doesn't expose
+a clean semantic enum would have to work, and the point is to measure how
+far a coarse code alone gets you.
 
-### Hand labels come from `error_description`, never `error_reason`
+Not far, because `error_code` has exactly two values. Over the 1,863
+`payment.failed` events in `data/events.json` (seed `20260826`, verified by
+regenerating byte-identically):
 
-`eval/diagnosis_audit.py`'s `HAND_LABEL_BY_DESCRIPTION` maps the six fixed
-`error_description` strings datagen writes back to their root cause — the
-same reading a human triager would do, recorded as a lookup rather than
-shortcut around. It never reads `error_reason` (present in the same raw
-payload but unused) or `ground_truth.json`, so the hand labels are a
-genuinely independent check on the code-only classifier, not a peek at the
-answer key.
+| error_code | events | causes it covers |
+|---|---|---|
+| `GATEWAY_ERROR` | 566 | `bank_downtime` 287, `gateway_timeout` 279 — a near 1:1 pair |
+| `BAD_REQUEST_ERROR` | 1,297 | `insufficient_funds` 520, `otp_timeout` 419, `expired_card` 202, `invalid_card` 156 — a four-way collision |
 
-### Confusion matrix on the first 100 real failure rows (seed `20260826`)
+The map is built from that frequency table *before* touching a real event
+and just picks each code's plurality: `GATEWAY_ERROR → bank_downtime`,
+`BAD_REQUEST_ERROR → insufficient_funds`. So every one of the 1,297
+`BAD_REQUEST_ERROR` events gets the single label `insufficient_funds`;
+`expired_card`, `invalid_card` and `otp_timeout` — 777 events — are
+structurally unrecoverable and score exactly 0.00, and `GATEWAY_ERROR` is a
+coin toss between two near-equal causes. That ceiling, not any
+implementation detail, is the whole reason the rules top out around **0.32**.
+
+The blind-audit harness (`tools/label_harness.py score`, via
+`rules/error_code_map.json`) additionally lets the map key on `method`
+alongside `error_code`. It doesn't help. Splitting `BAD_REQUEST_ERROR` by
+method still can't separate the four causes, because `method` is
+independent of `error_reason` in datagen — the non-card `BAD_REQUEST_ERROR`
+subset (812 events) carries the same four causes in nearly the same
+proportions (`insufficient_funds` .41, `otp_timeout` .33, `expired_card`
+.16, `invalid_card` .11) as the card subset (.39 / .32 / .15 / .14) —
+and splitting `GATEWAY_ERROR` by method is just the coin toss made
+explicit. With `method` added, the overall rules score is still 0.320.
+
+### How the committed labels were made — blind stratified hand-labeling
+
+An earlier harness, `eval/diagnosis_audit.py`, hand-labeled by mapping the
+six fixed `error_description` strings to causes and called that "a
+genuinely independent check on the code-only classifier." **That claim is
+withdrawn.** `datagen._REASON_DETAIL` emits `error_reason →
+error_description` strictly 1:1 across all 1,863 failures — six causes, six
+frozen strings, zero variation (verified against `data/events.json`: every
+`error_reason` maps to exactly one `error_description`, and no string is
+shared between causes). A description lookup and an `error_reason` lookup
+are the same table keyed differently, so `HAND_LABEL_BY_DESCRIPTION` was
+reading the generator's answer key by another name — not an independent
+signal at all.
+
+The committed labels come from `tools/label_harness.py` instead, drawn
+blind from the payload:
+
+1. **Failure filter** — drop the 137 `payment.authorized` noise events
+   (no `error_code`, not diagnosis targets), leaving 1,863.
+2. **Retry dedupe** — collapse rows sharing a `notes.customer_id` to the
+   earliest by `created_at`: 252 retry duplicates removed, 1,611 rows
+   left (one per customer).
+3. **Stratified sample** — join to `ground_truth.json` on payment id,
+   then draw n=100 stratified by true cause with a per-class floor of 15
+   (six classes × 15 = 90 deterministic floor rows + 10 random top-up),
+   at sampling seed `20260829` — deliberately *not* the datagen seed, so
+   the sample isn't correlated with generation order. The true-cause key
+   and a digest go to `labels/_truth_manifest.json`, which the `label`
+   subcommand never opens; the root-cause field is stripped from every
+   sampled payload before it is written to `labels/blind_sample.json`.
+4. **Label** — one keystroke per row, reading only `error_code`,
+   `method`, `amount`, `status`, `created_at`, `error_description`; an
+   `unknown` requires a written note. `tests/test_slice6_diagnosis.py`
+   guards the integrity of this design, not any accuracy: no root-cause
+   key leaks into a blind payload, every true class clears the floor, the
+   file and manifest digests agree, no row is left unlabeled, and every
+   abstention carries a note.
+
+### The three matrices (blind sample, n=100, sampling seed `20260829`)
+
+**A — human labels vs ground truth**, the payload ceiling (rows = true
+cause, cols = blind human label):
 
 ```
-true \ pred         bank_downtime       gateway_timeout     expired_card        invalid_card        insufficient_funds  otp_timeout
-bank_downtime       19                  0                   0                   0                   0                   0            recall=1.00 n=19
-gateway_timeout     11                  0                   0                   0                   0                   0            recall=0.00 n=11
-expired_card        0                   0                   0                   0                   12                  0            recall=0.00 n=12
-invalid_card        0                   0                   0                   0                   10                  0            recall=0.00 n=10
-insufficient_funds  0                   0                   0                   0                   20                  0            recall=1.00 n=20
-otp_timeout         0                   0                   0                   0                   28                  0            recall=0.00 n=28
+                     bank_downtime  expired_card  gateway_timeout  insufficient_funds  invalid_card  otp_timeout |  n   acc
+bank_downtime              14             0              0                 0                 0             1      | 15  0.93
+expired_card                0            17              0                 0                 0             0      | 17  1.00
+gateway_timeout             0             0             16                 0                 0             0      | 16  1.00
+insufficient_funds          0             0              0                17                 0             0      | 17  1.00
+invalid_card                0             0              0                 0                18             0      | 18  1.00
+otp_timeout                 0             0              0                 0                 0            17      | 17  1.00
+-> overall accuracy = 0.990
 ```
 
-**Worst class: `otp_timeout`, 28/28 misclassified.** Failure mode:
-`error_code` alone can't separate `BAD_REQUEST_ERROR`'s four sub-causes,
-and the majority-vote default (`insufficient_funds`) silently absorbs every
-`otp_timeout` event. `gateway_timeout`, `expired_card`, and `invalid_card`
-are also always wrong (100% error rate, same as `otp_timeout`) — but
-`otp_timeout` is the worst *by volume*: it's `BAD_REQUEST_ERROR`'s
-second-largest true class (0.22, behind only `insufficient_funds` at 0.28),
-so among the four always-wrong sub-causes it has the most instances in any
-real sample. `bank_downtime` and `insufficient_funds` — the two majority
-defaults — recover perfectly (100% recall), because the map was built to
-default to exactly them.
+**B — rules vs human labels**, the real test (rows = blind human label,
+cols = rules prediction, via `error_code` + `method`):
+
+```
+                     bank_downtime  expired_card  gateway_timeout  insufficient_funds  invalid_card  otp_timeout |  n   acc
+bank_downtime               7             0              7                 0                 0             0      | 14  0.50
+expired_card                0             0              0                 1                 9             7      | 17  0.00
+gateway_timeout            10             0              6                 0                 0             0      | 16  0.38
+insufficient_funds          0             0              0                 0                 6            11      | 17  0.00
+invalid_card                0             0              0                 2                11             5      | 18  0.61
+otp_timeout                 0             0              1                 1                 8             8      | 18  0.44
+-> overall accuracy = 0.320
+```
+
+**Worst class: `expired_card`, 0/17**, collapsing into `invalid_card` —
+both are `BAD_REQUEST_ERROR` on a card, and there is no key in `error_code`
++ `method` that tells them apart. `insufficient_funds` also scores 0.00
+(its 17 rows scatter onto `invalid_card` / `otp_timeout` under the method
+split). Matrix C (rules vs ground truth, not shown) is 0.320 as well: the
+error codes were written *from* the cause so it over-credits the rules, and
+the near-zero B↔C gap just says the blind human labels and the answer key
+agree almost everywhere — which is the next problem.
+
+### What the 0.99 ceiling actually is — a transcription ceiling, not a signal ceiling
+
+Because `error_description` is 1:1 with `error_reason`, a labeler reading
+the payload — which shows `error_description` in plain English — is
+transcribing the generator's encoding, not extracting an independent
+signal. So matrix A's **0.99 is labeler-vs-generator agreement**: it shows
+a human copies the six fixed strings back correctly. It does **not**
+establish that the payload carries recoverable root-cause information
+beyond the answer key. It is a *transcription* ceiling, not a *signal*
+ceiling.
+
+That constrains what matrix B can be claimed to show. The 0.99 → 0.32 gap
+is a fair measure of one thing — how little of the generator's own
+encoding a coarse `error_code` (± `method`) rule can reproduce — and that
+poverty is real. But it is not evidence about a corpus where descriptions
+actually vary: there, the human ceiling could sit far below 0.99, and this
+dataset gives no way to find out where. Slice 7 is where that limitation
+bites.
+
+---
+
+## Slice 7 · LLM diagnosis tail (`app/llm_diagnosis.py`)
+
+### The trigger — the whole `BAD_REQUEST_ERROR` cell
+
+`is_ambiguous(entity)` fires on `error_code == "BAD_REQUEST_ERROR"` and
+nothing else: **1,297 of the 1,863 failures (70%)**, split four ways —
+`insufficient_funds` 520, `otp_timeout` 419, `expired_card` 202,
+`invalid_card` 156. The pipeline rules (`app/diagnosis.py`, `error_code`
+only) hand this whole cell the single label `insufficient_funds`, so three
+of the four causes — 777 events — are never predicted correctly and the
+fourth is right only because it is the constant guess. Nothing in
+`error_code`, and per Slice 6 nothing in `error_code` + `method` either,
+splits this cell. So the whole cell is what gets handed to the model.
+Every non-`BAD_REQUEST_ERROR` event keeps its rules label untouched, with
+`attempts = 0` and the transport never constructed.
+
+### Why `method` was dropped from the gate
+
+An earlier gate was `BAD_REQUEST_ERROR` **and** `method == "card"`. That
+was wrong. `method` is independent of `error_reason` in datagen —
+`pay_000001` is `method: "upi"` carrying `"card number or CVV is invalid"`
+(`invalid_card`) — and the non-card `BAD_REQUEST_ERROR` subset, 812
+events, shows the same four causes in nearly the same proportions as the
+card subset (see the Slice 6 method table). The `method == "card"`
+condition was excluding 812 equally ambiguous events for no reason, so it
+was removed; `is_ambiguous` now reads `error_code` alone. The same fact
+has a second edge: the `+method` half of the Slice 6 audit map contributes
+noise, not signal, to the 0.32. That `method` carries no root-cause
+information here — a UPI payment can't have an expired card, yet datagen
+lets it — is a **known datagen weakness, out of frozen scope and not
+fixed**.
+
+### Why the accept path is disabled (`TAIL_ACT_ENABLED = False`)
+
+`error_description` is 1:1 with `error_reason` (Slice 6), and the model is
+handed `error_description` in its prompt. So any classifier that reads the
+description — the model included — scores a fake ~1.00 by transcription,
+exactly as a plain lookup table would. This corpus therefore **cannot
+distinguish a real prose classifier from a dictionary**, which makes the
+tail unvalidatable here. While the switch is `False`, every LLM-sourced
+`Diagnosis` (`source` `llm` or `llm_failed`) is recorded with its proposed
+cause and routed to the human queue — never to a money action. The rules
+path (`source` `rules`) is unaffected and still acts.
+
+### The consequence, stated plainly
+
+While the tail is gated, **70% of failures take no automated action** —
+they are diagnosed just far enough to know the rules can't diagnose them,
+then parked for a person. This is deliberate. Acting on a label the rules
+produce at 0.00 accuracy for three of the four causes in the cell is
+spending nudge budget on a coin flip; a recorded-but-unactioned diagnosis
+costs nothing and forecloses nothing. The finding *is* the contribution of
+this slice: the rules layer cannot act on most of the failure volume, and
+this synthetic corpus cannot validate the classifier that would fix that.
+
+### The fail-closed contract
+
+- **Parse** — the *entire* model response must be one JSON object (a lone
+  ```` ```json ```` fence is stripped first; JSON embedded in prose is
+  rejected) whose `root_cause` is in the six-cause enum plus `unknown`.
+- **Retry** — `TailTimeout` and `OSError` retry up to `max_retries`
+  (default 2, so 3 attempts total). A parse failure or an out-of-enum
+  answer is **terminal, no retry**: the prompt is deterministic, so a
+  retry would only triple the cost for the same output. Any other
+  transport exception is terminal too.
+- **Abstention** — a clean `{"root_cause": "unknown"}` is an honest
+  abstention (`source` `llm`, one attempt), queued for a human; distinct
+  from `llm_failed`.
+- **Second layer** — `apply()` hard-gates any `source` in `{llm,
+  llm_failed}` to the human queue *before* `is_money_eligible` is
+  consulted, and `is_money_eligible` (route is `act` **and** the cause is
+  a real cause) remains as an independent second check.
+
+### What is not claimed
+
+`tests/test_llm_diagnosis.py` (**35 tests**) verifies four adversarial
+transports all fail closed to `unknown` + the human queue and never
+spend: garbage text, a forced timeout, an out-of-enum cause, and the
+network pulled (`OSError`). The **fifth** failure mode — a well-formed,
+in-enum, confidently *wrong* answer — is the dangerous one, and it is
+unscoreable on this corpus for the reason the accept path is disabled:
+with no description variation, there is nothing against which a
+confidently-wrong answer could be caught. It is documented here, not
+claimed as handled.
+
+### Test count
+
+`tests/test_llm_diagnosis.py`: **35 passed**. Full suite
+(`python -m pytest tests/ -v`): **160 passed**.
