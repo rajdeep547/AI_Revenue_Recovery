@@ -147,10 +147,15 @@ def _clean_phone(value: Any) -> str | None:
     return "+" + digits if len(digits) >= 11 else None
 
 
-def _contact(email: Any, phone: Any) -> tuple[str | None, str | None]:
+def _contact(
+    email: Any, phone: Any, *, allow_missing_contact: bool = False
+) -> tuple[str | None, str | None]:
     email, phone = _clean_email(email), _clean_phone(phone)
-    if not email and not phone:
+    if not email and not phone and not allow_missing_contact:
         raise AdapterError("no_contact_channel", "row has neither email nor phone")
+    # allow_missing_contact=True (the Slice 8 live bridge): keep the row, let
+    # the decision engine decide -- a contactless customer is still reachable
+    # by a silent gateway retry (retry_silent needs no channel).
     return email, phone
 
 
@@ -188,7 +193,9 @@ def _iso_utc(value: Any) -> str:
 # -------------------------------------------------------------------- adapters
 
 
-def _adapt_card_failure(payload: dict) -> NormalizedRow:
+def _adapt_card_failure(
+    payload: dict, *, allow_missing_contact: bool = False
+) -> NormalizedRow:
     entity = _require(payload, "payload", "payment", "entity")
     reference = str(_require(entity, "id"))
     notes = entity.get("notes")
@@ -203,6 +210,7 @@ def _adapt_card_failure(payload: dict) -> NormalizedRow:
     email, phone = _contact(
         notes.get("email") or entity.get("email"),
         notes.get("phone") or notes.get("contact") or entity.get("contact"),
+        allow_missing_contact=allow_missing_contact,
     )
     return NormalizedRow(
         event_id=f"card_failure:{reference}",
@@ -220,7 +228,9 @@ def _adapt_card_failure(payload: dict) -> NormalizedRow:
     )
 
 
-def _adapt_abandoned_cart(payload: dict) -> NormalizedRow:
+def _adapt_abandoned_cart(
+    payload: dict, *, allow_missing_contact: bool = False
+) -> NormalizedRow:
     reference = str(_require(payload, "checkout_id"))
     customer = payload.get("customer")
     customer = customer if isinstance(customer, dict) else {}
@@ -230,6 +240,7 @@ def _adapt_abandoned_cart(payload: dict) -> NormalizedRow:
     email, phone = _contact(
         customer.get("email") or payload.get("email"),
         customer.get("phone") or payload.get("phone"),
+        allow_missing_contact=allow_missing_contact,
     )
     return NormalizedRow(
         event_id=f"abandoned_cart:{reference}",
@@ -247,12 +258,15 @@ def _adapt_abandoned_cart(payload: dict) -> NormalizedRow:
     )
 
 
-def _adapt_mandate_failure(payload: dict) -> NormalizedRow:
+def _adapt_mandate_failure(
+    payload: dict, *, allow_missing_contact: bool = False
+) -> NormalizedRow:
     reference = str(_require(payload, "invoice_id"))
     customer_id = str(_require(payload, "customer_ref"))
     email, phone = _contact(
         payload.get("customer_email"),
         payload.get("customer_phone"),
+        allow_missing_contact=allow_missing_contact,
     )
     return NormalizedRow(
         event_id=f"mandate_failure:{reference}",
@@ -284,11 +298,17 @@ def _adapter(source: str) -> Callable[[dict], NormalizedRow]:
         raise AdapterError("unknown_source", str(source)) from None
 
 
-def normalize(source: str, payload: dict) -> dict:
+def normalize(
+    source: str, payload: dict, *, allow_missing_contact: bool = False
+) -> dict:
     """Run one adapter and return the normalized row as a plain dict. No
     storage, no de-duplication — the shape transform only. Raises
-    :class:`AdapterError` on bad input; stays a pure function."""
-    return _adapter(source)(payload).as_dict()
+    :class:`AdapterError` on bad input; stays a pure function.
+
+    ``allow_missing_contact=True`` lets a row with neither email nor phone
+    through (Slice 8 live bridge) instead of rejecting it — see
+    :func:`_contact`."""
+    return _adapter(source)(payload, allow_missing_contact=allow_missing_contact).as_dict()
 
 
 def _dump(payload: Any) -> str:
@@ -344,9 +364,11 @@ class Ingestor:
         self._duplicate = 0
         self._rejected: dict[str, int] = {}
 
-    def ingest(self, source: str, payload: dict) -> IngestResult:
+    def ingest(
+        self, source: str, payload: dict, *, allow_missing_contact: bool = False
+    ) -> IngestResult:
         try:
-            row = _adapter(source)(payload)
+            row = _adapter(source)(payload, allow_missing_contact=allow_missing_contact)
         except AdapterError as exc:
             return self._reject(source, exc.reason_code, exc.detail, payload)
         except Exception as exc:  # noqa: BLE001 — ingest must never raise on input

@@ -32,7 +32,6 @@ Run over the real dataset::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from collections import Counter
@@ -40,62 +39,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
+from app.arms import (  # single implementation - see app/arms.py
+    TREATMENT_FRACTION,
+    _uniform_assign,
+    assign_arm,
+    assign_arms,
+)
 from app.ingest import Ingestor
 from eval.environment import Environment
 
-_TWO53 = float(1 << 53)
 _Z_95 = 1.959963984540054  # scipy.stats.norm.ppf(0.975)
-
-TREATMENT_FRACTION = 0.7
 
 Action = str  # "none" | "nudge"
 Policy = Callable[[dict], Action]
 
-
-# ------------------------------------------------------------------ assignment
-
-
-def _uniform_assign(run_seed: int, customer_id: str) -> float:
-    """Deterministic uniform draw in [0, 1) for arm assignment only.
-
-    SPEC DEVIATION (approved): the brief specified hashing
-    ``sha256(f"{run_seed}:{customer_id}")`` for assignment. This hashes
-    ``f"assign:{run_seed}:{customer_id}"`` instead -- sharing the exact hash
-    ``eval.environment`` uses for outcome resolution would tie a customer's
-    arm to the same uniform draw used to decide whether they self-recover
-    under "none", biasing the control-arm recovery rate downward and
-    inflating every measured uplift. See DECISIONS.md "Slice 5" for the full
-    rationale.
-
-    Salted ``"assign:"`` and kept in its own namespace, deliberately
-    *distinct* from ``eval.environment``'s outcome-resolution draw
-    (``sha256(f"{seed}:{customer_id}")``). Reusing that exact hash here would
-    make a customer's arm deterministically correlated with whether they
-    self-recover under "none" (both would compare the very same u against
-    unrelated thresholds), biasing the control-arm recovery rate away from
-    the population baseline. A different salt keeps the two draws
-    independent while both stay fully deterministic in (seed, customer_id).
-    """
-    digest = hashlib.sha256(f"assign:{run_seed}:{customer_id}".encode("utf-8")).digest()
-    return (int.from_bytes(digest[:8], "big") >> 11) / _TWO53
-
-
-def assign_arm(
-    run_seed: int, customer_id: str, treatment_fraction: float = TREATMENT_FRACTION
-) -> str:
-    """"treatment" or "control" — deterministic in (run_seed, customer_id)
-    alone. Never call with an event_id: two events from the same customer
-    must land in the same arm, which only holds if the hash input is the
-    customer_id."""
-    return "treatment" if _uniform_assign(run_seed, customer_id) < treatment_fraction else "control"
-
-
-def assign_arms(
-    customer_ids: Iterable[str],
-    run_seed: int,
-    treatment_fraction: float = TREATMENT_FRACTION,
-) -> dict[str, str]:
-    return {cid: assign_arm(run_seed, cid, treatment_fraction) for cid in customer_ids}
+# Arm-assignment helpers (`_uniform_assign`, `assign_arm`, `assign_arms`,
+# `TREATMENT_FRACTION`) moved to `app.arms` so the runtime pipeline can
+# assign arms without any import route from app/ into eval/. They are
+# re-exported here unchanged, so `eval.measurement.assign_arm(...)` still
+# works and produces byte-identical results.
 
 
 # ---------------------------------------------------------------------- policies

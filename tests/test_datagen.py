@@ -150,14 +150,29 @@ def test_log_amount_is_approximately_normal_not_uniform():
 
 
 def test_no_pipeline_module_references_holdout_code():
-    """The grep from the Slice 3 break step, as an assertion: zero hits under
-    app/ for the held-out data (`ground_truth`) or the eval harness (`eval.`)."""
-    forbidden = ("ground_truth", "eval.")
+    """app/ must not depend on the generator / offline-harness side. Fails on:
+    the held-out data token anywhere; any import route from app/ into eval/
+    (`from eval ...`, `import eval`, `from eval.x import`, `import eval.x`);
+    and any bare `eval.` attribute reference in app/ code. The old test only
+    searched for the `eval.` substring, which `from eval import measurement`
+    slipped past."""
+    import re as _re
+
+    holdout = _re.compile(r"ground_truth")
+    eval_import = _re.compile(r"^[ \t]*(from[ \t]+eval\b|import[ \t]+eval\b)", _re.M)
+    eval_attr = _re.compile(r"\beval\.")
+
     hits = []
     for py in (REPO / "app").rglob("*.py"):
         text = py.read_text(encoding="utf-8")
-        hits += [f"{py.relative_to(REPO)}: {tok}" for tok in forbidden if tok in text]
-    assert hits == []
+        rel = py.relative_to(REPO)
+        if holdout.search(text):
+            hits.append(f"{rel}: references ground_truth")
+        if eval_import.search(text):
+            hits.append(f"{rel}: imports from eval/")
+        if eval_attr.search(text):
+            hits.append(f"{rel}: bare `eval.` reference")
+    assert hits == [], hits
 
 
 def test_cli_writes_both_files(tmp_path):

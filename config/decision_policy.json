@@ -1,0 +1,51 @@
+{
+  "policy_version": "s7.1",
+  "ticket_basis": "gross_inr",
+  "min_ev_inr": 2.0,
+  "human_review_ticket_inr": 10000.0,
+  "confidence_penalty_floor": 0.35,
+  "cooldown_hours": 24,
+  "population_incremental": 0.10,
+  "experiment_seed": 20260826,
+  "experiment_seed_basis": "MUST equal datagen.DEFAULT_SEED. The pipeline assigns treatment/control arms with sha256(f'assign:{experiment_seed}:{customer_id}'); measurement assigns arms the same way keyed on the datagen seed. If the two seeds drift, ~30% of customers land in a different arm in the pipeline than in measurement, and uplift is then computed across mismatched arms. tests/test_slice8_pipeline.py pins this equality (imported from datagen, not re-typed).",
+  "review_confidence_threshold": 0.55,
+  "high_touch_rungs": ["agent_call"],
+  "action_ladder": [
+    {"name": "retry_silent", "cost_inr": 0.05, "effectiveness": 0.35, "requires_channel": null,
+     "basis": "A silent gateway re-attempt is not free: it consumes a payment-attempt slot with the acquirer and, on a soft decline, risks a fraud-score / retry-penalty ding on the card. Nominal Rs 0.05 so the cheapest rung still carries a cost and min_ev_inr is not the only thing that can skip it."},
+    {"name": "email", "cost_inr": 0.10, "effectiveness": 0.55, "requires_channel": "email"},
+    {"name": "sms", "cost_inr": 0.22, "effectiveness": 0.70, "requires_channel": "phone"},
+    {"name": "whatsapp", "cost_inr": 0.88, "effectiveness": 1.00, "requires_channel": "phone"},
+    {"name": "agent_call", "cost_inr": 42.00, "effectiveness": 1.45, "requires_channel": "phone"}
+  ],
+  "incremental_priors": {
+    "bank_downtime": {
+      "p_incremental": 0.04,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. Transient acquirer/issuer outage; the customer almost always retries unaided once the outage clears, so a paid nudge causes very few extra recoveries. Revisit against a measured control arm before trusting."
+    },
+    "gateway_timeout": {
+      "p_incremental": 0.05,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. Transient gateway fault, mostly self-resolves on retry; a sibling of bank_downtime with a slightly higher assumed lift because a stuck request is more visible to the customer than an issuer decline. Revisit against a measured control arm."
+    },
+    "insufficient_funds": {
+      "p_incremental": 0.09,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. Balance-timing failure; a delayed retry (post-payday) or a smaller-amount prompt helps modestly. Revisit against a measured control arm."
+    },
+    "invalid_card": {
+      "p_incremental": 0.16,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. Revised down from the 0.22 first written for an expired-card-only cause: invalid_card is broader (mistyped number, wrong CVV, wrong expiry, genuinely expired), and only the expiry slice carries the high 'update your card' lift, so the blended prior is lower. Revisit against a measured control arm, ideally split by sub-reason."
+    },
+    "expired_card": {
+      "p_incremental": 0.22,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. The card will not fix itself; a single 'update your card' nudge is where real incremental revenue lives. Reachable only via the LLM diagnoser (app/llm_diagnosis, ROOT_CAUSES) -- the rules map (rules/error_code_map.json) collapses card expiry into invalid_card and never emits this cause -- so invalid_card at 0.16 stays as the broader blended card cause and the two coexist. Revisit against a measured control arm."
+    },
+    "otp_timeout": {
+      "p_incremental": 0.05,
+      "basis": "PLACEHOLDER FOR HUMAN REVIEW, not a measured value. Carried over from an authentication-timeout cause: the customer abandoned mid-auth (3DS / OTP / UPI-PIN); a prompt 'complete your payment' reminder recovers a small slice, most lapse regardless. Revisit against a measured control arm."
+    },
+    "unknown": {
+      "p_incremental": 0.10,
+      "basis": "Not a placeholder. An undiagnosed event has no cause-specific information, so by construction it falls back to population_incremental (0.10) -- the average incremental recovery rate across all causes. This value is correct as long as it tracks population_incremental; it is not awaiting review."
+    }
+  }
+}

@@ -738,3 +738,152 @@ claimed as handled.
 
 `tests/test_llm_diagnosis.py`: **35 passed**. Full suite
 (`python -m pytest tests/ -v`): **160 passed**.
+
+---
+
+## Slice 7 — Decision engine
+
+**Built.** `decide(event, policy, arm, history) -> Decision`, a pure function
+(no DB, no clock). EV per ladder rung: `p_rung × ticket − cost`, best rung by
+EV with ties to lower cost. Terminals: ACT, SKIP (7 reasons), ROUTE_TO_HUMAN.
+Every decision is a flat append-only row in `decisions` (Slice 2 trigger
+pattern), written with its audit row in one transaction.
+
+**Priors are stated guesses, not measurements.** `app/` may not read
+`ground_truth.json`, so `p_incremental` comes from a hand-written table in
+`config/decision_policy.json`. Six of seven entries are marked PLACEHOLDER FOR
+HUMAN REVIEW with a written basis each. This is the point of the control arm:
+Slice 5 measures whether these priors were right. `unknown` (0.10) is the
+exception — it equals `population_incremental` by construction, and a test
+enforces the coupling.
+
+**Ticket is gross, not contribution margin.** A real merchant would use
+margin; using gross inflates every EV by COGS. Recorded as an assumption
+rather than silently chosen.
+
+**Minimum EV floor (₹2.00), not zero.** Positive-but-tiny EV is
+indistinguishable from zero at these sample sizes, so acting on it is
+noise-chasing.
+
+**ROUTE_TO_HUMAN is a policy override, not an EV bound.** First attempt gated
+it on a negative lower-bound EV. That was wrong twice over: the literal form
+scales *up* with ticket size (unreachable), and a population-subtracted form
+is ticket-independent (always firing above the threshold). On pure EV a
+low-confidence high-value case *should* be acted on — the downside of a wrong
+`agent_call` is the wasted ₹42 and nothing more. The real reasons to escalate
+(wrong script, brand damage, annoying a flagged customer) are outside the
+model, so they are an explicit rule: best rung in `high_touch_rungs` AND
+ticket ≥ ₹10,000 AND confidence < 0.55. `ev_lower_inr` remains on the record
+as a diagnostic and gates nothing. `gate_basis` records which mechanism
+decided: `expected_value` | `policy_override` | `hard_gate` | `experiment`.
+
+**Control arm records a shadow decision.** A control-arm event still runs the
+full ladder and records what it *would* have done, then terminates
+`CONTROL_ARM`. Without this, uplift compares "treated events we chose to act
+on" against "all control events including ones we'd have skipped" — which
+silently corrupts the one number the project rests on.
+
+**Rationale percentages must be the ones the EV was computed from.** The first
+version rendered `p_effective` while `ev_inr` used `p_rung = p_effective ×
+effectiveness`. A reader multiplying the sentence's own numbers got a
+different answer (3.9% × ₹2,500 − ₹42 = ₹55.25 against a stated ₹97.56). Added
+`p_action_basis`, rendered at 2dp; a test parses the numbers back out of the
+rendered string and asserts `pct × ticket − cost == ev_inr` within the
+display-rounding band, and a paired test proves substituting `p_effective`
+breaks it.
+
+**Cause vocabulary drifted and was reconciled.** The prior table was written
+against invented cause names; four of six production causes had no reviewed
+prior, and all four break cases ran on causes the rules engine cannot emit.
+The totality test now derives its expected set at test time from
+`rules/error_code_map.json` (`map` values + `default`) unioned with
+`app.diagnosis.ROOT_CAUSES`, and asserts set equality in *both* directions —
+a prior for an unreachable cause fails as loudly as a missing one.
+`expired_card` (0.22) is reachable only via the LLM diagnoser; `invalid_card`
+(0.16) is the broader blended cause the rules map emits. Both modules export
+the same seven causes today; if they ever drift, the totality test would stop
+covering the LLM path.
+
+**Ladder non-degeneracy is tested.** `retry_silent` at ₹0.00 made EV
+structurally non-negative for any positive prior, leaving `min_ev_inr` as the
+only thing that could skip a cheap action, and dominating `email` everywhere.
+Priced at ₹0.05 (gateway attempt slot, soft-decline penalty). A grid sweep
+asserts every rung is argmax somewhere: retry_silent 13, email 17, sms 16,
+whatsapp 109, agent_call 69 of 224 cells.
+
+**`action` on ROUTE_TO_HUMAN is a proposal.** It carries the proposed rung, so
+`action is not None` does not imply authorised spend. Consumers gate on
+`terminal == ACT`.
+
+Four break cases: risk-blocked ₹30,000 (skips before any EV arithmetic, ladder
+monkeypatched to prove it); ₹30 ticket (EV ₹0.94 below floor — re-run at
+`min_ev_inr=0` flips to ACT, proving the floor and not the arithmetic
+skipped it); repeat customer with prior control-arm self-recovery (p_effective
+×0.25, and at ₹2,000 the penalty moves the chosen rung, not just a number);
+₹18,000 at confidence 0.40 (routes; controls at confidence 0.85 and at ₹900
+each ACT, proving both conjuncts load-bearing).
+
+## Slice 8 — Integration
+
+**Built.** `app/pipeline.py::process_failure(payment_id, *, db_path, policy,
+now_utc)`: load normalized row → rules diagnose → assign arm → decide →
+record. No new decision or diagnosis logic, no action execution. Idempotent —
+a second call returns the existing Decision without a second row. ACT means
+*recorded*, not *sent*; the module exposes no send/execute/dispatch callable.
+Wired into the webhook handler after the state machine settles a payment as
+failed; any pipeline failure is logged and swallowed so the webhook still
+returns 200 (Razorpay retries on non-2xx, and a decision bug must not cause a
+redelivery storm).
+
+**`assign_arm` moved to `app/arms.py`.** The pipeline initially did
+`from eval import measurement`, which passed the isolation test only because
+`"eval "` is not the `"eval."` substring it searched for — working around the
+guard, not satisfying the rule. `assign_arm` is a pure sha256 helper, so it
+now lives in `app/` and `eval/measurement.py` imports it from there. One
+implementation, asserted by identity. Slice 5's output is byte-identical after
+the move. The isolation test was hardened to catch any route from `app/` into
+`eval/`.
+
+**Seed provenance.** `experiment_seed` (20260826) must equal
+`datagen.DEFAULT_SEED`; a test imports it rather than re-typing the literal,
+and an arm-parity test confirms pipeline and measurement agree for 60
+customers. `tools/label_harness.py` uses SEED 20260829 for blind sampling —
+deliberately different, deliberately decorrelated from generation order, and
+commented so nobody "fixes" one to match the other.
+
+**Confidence is a flat 0.32, borrowed from a sibling classifier.** From Slice
+6's blind audit (`slice6_score.txt` matrix B, n=100, per-class floor 15). Two
+caveats, stated rather than buried: it is a corpus-wide figure used as a
+per-event, per-cause confidence (not calibrated per cause), and it scored
+`rules/error_code_map.json` (error_code + method) while the pipeline runs
+`app.diagnosis` (error_code only). Consequence: priors spanning 5.5×
+(0.04–0.22) compress to 1.7× in `p_effective` (0.081–0.138), all hugging the
+0.10 population rate. The rules diagnosis barely moves the needle.
+
+**Known boundary — the synthetic corpus is narrower than production.** Across
+all 1,611 ingested rows: 100% carry email, 0% carry phone (datagen's `notes`
+object holds only `customer_id` and `email`). So `sms`, `whatsapp` and
+`agent_call` can never be chosen, `agent_call` is the sole `high_touch_rungs`
+entry, and ROUTE_TO_HUMAN is unreachable on synthetic data — test-covered but
+not data-reachable. Live outcome distribution on the corpus: 69.9% ACT/email,
+30.1% SKIP/CONTROL_ARM. This is a data-generation gap, not a policy defect,
+and the corpus was deliberately *not* regenerated to hide it. The live webhook
+below confirms real Razorpay payloads do carry `contact` — the first live
+decision chose `sms`.
+
+**`SkipReason.NO_CONTACT_CHANNEL` is unreachable in production.**
+`retry_silent` requires no channel, so a contactless customer is always
+reachable. The Slice 7 test that exercises it does so by deleting
+`retry_silent` from the ladder. The live bridge therefore lets a contactless
+payload through to the engine (`allow_missing_contact=True`) rather than
+quarantining it.
+
+**Slice 4 was modified during Slice 8** — flagged rather than passed quietly.
+`allow_missing_contact: bool = False` threaded through `_contact`, the three
+adapters, `normalize`, and `Ingestor.ingest`. Default `False`; all 63 existing
+ingest tests pass unchanged.
+
+**PASS — live end-to-end, 2026-08-30T19:32:26Z.** A real Razorpay test payment
+failed, the webhook was signature-verified (an unsigned probe in the same log
+was rejected 401), the payload bridged through the Slice 4 `card_failure`
+adapter, and one decision was recorded.

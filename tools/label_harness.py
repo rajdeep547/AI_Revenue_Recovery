@@ -66,6 +66,11 @@ MANIFEST_PATH = os.path.join(LABELS_DIR, "_truth_manifest.json")
 RULES_DIR = os.path.join(ROOT, "rules")
 EMAP_PATH = os.path.join(RULES_DIR, "error_code_map.json")
 
+# Blind-sample draw-order seed. DELIBERATELY not datagen.DEFAULT_SEED
+# (20260826): the sample must be decorrelated from generation order, so it
+# uses its own value. This is unrelated to decision_policy.json's
+# experiment_seed (which MUST equal datagen's, for arm assignment). Do not
+# "fix" one to match the other -- they are different seeds for different jobs.
 SEED = 20260829
 
 # Exactly the id fields the `schema` printout must report on.

@@ -2,10 +2,13 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app import pipeline
+from app.decision.engine import load_policy
 from app.db import (
     append_audit,
     create_event,
@@ -26,6 +29,43 @@ RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 # Only these two event types have a defined state transition in this slice.
 # Anything else — even with a payment_id attached — is unhandled_event_type.
 HANDLED_EVENT_TYPES = {"payment.failed", "payment.captured"}
+
+
+def _run_decision_pipeline(payment_id: str, payload: dict) -> None:
+    """Slice 8: once a payment has settled as failed, bridge the live webhook
+    payload into a normalized ingest row (via the existing Slice 4
+    card_failure adapter) and record a decision for it.
+
+    A failure in here must never make the webhook non-2xx - Razorpay retries
+    on non-2xx, and a decision bug must not cause a redelivery storm. So: log
+    and swallow. If the adapter rejects the payload, log the reason and stop
+    (still 200)."""
+    try:
+        db_path = os.environ.get("WEBHOOK_DB_PATH", "webhook_events.db")
+
+        reject_reason = pipeline.ingest_live_failure(payload, db_path=db_path)
+        if reject_reason is not None:
+            logger.warning(
+                "live payload rejected by card_failure adapter: %s "
+                "(payment_id=%s); webhook still 200", reject_reason, payment_id,
+            )
+            return
+
+        decision = pipeline.process_failure(
+            payment_id,
+            db_path=db_path,
+            policy=load_policy(),
+            now_utc=datetime.now(timezone.utc).isoformat(),
+        )
+        if decision is not None:
+            logger.info(
+                "decision recorded payment_id=%s terminal=%s gate=%s",
+                payment_id, decision.terminal, decision.gate_basis,
+            )
+    except Exception:  # noqa: BLE001 - webhook ack must not depend on the pipeline
+        logger.exception(
+            "decision pipeline failed for payment_id=%s (webhook still 200)", payment_id
+        )
 
 
 def _extract_payment_entity(payload: dict) -> dict | None:
@@ -94,10 +134,12 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
     method = entity.get("method")
     existing = get_event(payment_id)
 
+    settled_failed = False
     if event_type == "payment.failed":
         if existing is None:
             create_event(payment_id, event_id, status="failed", amount=amount, method=method)
             append_audit(payment_id, event_id, "ingested", {"event": event_type})
+            settled_failed = True
         else:
             update_event(payment_id, event_id)
             append_audit(payment_id, event_id, "duplicate_delivery", {"event": event_type})
@@ -119,6 +161,13 @@ async def razorpay_webhook(request: Request) -> JSONResponse:
             append_audit(payment_id, event_id, "duplicate_delivery", {"event": event_type})
 
     logger.info("processed event=%s payment_id=%s id=%s", event_type, payment_id, event_id)
+
+    # Slice 8: hand a freshly-failed payment to the decision pipeline (via
+    # the live-ingest bridge). Never lets an exception reach the response -
+    # the webhook still acks 200.
+    if settled_failed:
+        _run_decision_pipeline(payment_id, payload)
+
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 
