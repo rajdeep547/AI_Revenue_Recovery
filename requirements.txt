@@ -4,6 +4,10 @@ python-dotenv==1.0.1
 pytest==8.3.2
 httpx==0.27.2
 
+# Slice 12 · read-only metrics dashboard (app/dashboard/). Server-rendered
+# HTML via jinja2 templates -- no npm, no build step, no CDN.
+jinja2==3.1.6
+
 # Slice 7 LLM diagnosis tail. Imported lazily in app/llm_diagnosis.py
 # (_default_transport only); the build/break tests inject a fake transport
 # and never need it. Pin once installed.

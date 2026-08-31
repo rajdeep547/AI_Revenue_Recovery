@@ -1664,3 +1664,99 @@ Not committed in this session (no-commit mode in force): the corrected files,
 diffs, test run and exit codes were produced and nothing was committed. The
 first frozen draft's gross-as-net-EV error and the FIX 6 over-claim are both
 recorded above, not rewritten away. Commit message pending separate approval.
+
+## Slice 12 · Screen 1 — read-only metrics dashboard (`app/dashboard/`, `scripts/audit_metrics.py`)
+
+`GET /metrics` renders a server-side jinja2 page from two **separately
+labelled** sources. New code is confined to `app/dashboard/` +
+`app/dashboard/templates/`; `app/main.py` gains only `include_router`, and
+`requirements.txt` gains `jinja2==3.1.6` (it was not previously a dependency).
+The webhook handler, the policy, and the `eval` package are untouched.
+
+### Read-only connection
+
+Every SQLite handle in the package is opened
+`sqlite3.connect("file:<path>?mode=ro", uri=True)` (`app/dashboard/live.py:connect_ro`).
+A write through that handle raises `sqlite3.OperationalError: attempt to write
+a readonly database` — pinned by a test (BREAK 5). Rationale: the dashboard is
+a pure observer of `webhook_events.db`. A read-write handle would let a bug,
+a bad query, or a future edit mutate the very ledger the page reports on; the
+URI `mode=ro` makes that a hard error at the driver, not a convention. A
+missing file and a file with an empty schema both degrade to an all-em-dash
+page with HTTP 200 — absence of data is not an error and never a
+`ZeroDivisionError` or a `0.0%`.
+
+### Two labelled sources, never one merged number
+
+The page shows **LIVE** (derived read-only from `WEBHOOK_DB_PATH` — real
+webhook deliveries) and **CORPUS RUN** (read verbatim from
+`results/final_run.json` — the Slice 11 frozen simulation) in two separate
+`<section>`s: distinct headers, distinct border colour (teal vs amber), and
+the badge *"simulated outcomes · eval harness · not live traffic"* on **every**
+corpus card. They are never summed and never blended.
+
+Why not a single merged figure: the two have different denominators and,
+more importantly, different epistemic status. LIVE recovery exists only where a
+real `payment.captured` webhook arrived (`events.status='recovered'`); today
+that is a handful of rows and no recoveries, so LIVE uplift is *suppressed*.
+CORPUS recovery is resolved by the eval harness from latent per-customer
+parameters — it validates the measurement apparatus, not real-world
+performance. Averaging or adding them would launder a simulated 9.91 pp into
+something that looks observed. Keeping them visually unmergeable is the whole
+point of the screen.
+
+Why the corpus section is badged "simulated": its outcomes come from
+`eval/environment.py` resolving `data/ground_truth.json`, not from a payment
+processor. A reader glancing at "9.91 pp uplift, ₹60,416 net EV" must not be
+able to mistake it for live results. The badge on every card, the separate
+coloured panel, and the caption naming `final_run.json` as the source all
+carry that message redundantly. Corpus numbers are parsed with
+`parse_float=str` / `parse_int=str` and rendered as-is — no recomputation, no
+re-rounding, no realised-share arithmetic on our side (BREAK 7).
+
+### `n >= 30` uplift suppression threshold
+
+Card 4 (incremental uplift) prints a number **only when both arms have n ≥ 30**
+observations; below that it renders `insufficient sample (treatment n=…,
+control n=…)` with the real counts. 30 is the conventional floor at which the
+normal approximation behind a binomial-proportion interval is usable; under it,
+a difference of two rates is dominated by which handful of customers happened
+to be captured, and a printed "+40 pp" would be noise wearing a headline.
+`app.dashboard.live.UPLIFT_MIN_ARM_N = 30`; the same gate suppresses the
+LIVE "net realised EV" figure. It is a display gate, not a statistical claim —
+the corpus panel, which is far past n=30 per arm, shows its uplift with the
+frozen Newcombe interval beside it.
+
+### Audit (`scripts/audit_metrics.py`)
+
+Re-derives every LIVE figure from the same DB by a **different query path** —
+different SQL and different source columns, not the dashboard helper called
+twice — and prints dashboard vs audit with PASS/FAIL per metric, exit 0 iff
+all PASS. Different paths include: `GROUP BY` → per-value `COUNT(*)` loop;
+arm driven from `normalized_events … WHERE reference IN (SELECT …)` instead of
+a `LEFT JOIN`; recovery from `audit.action='outcome_observed'` instead of
+`events.status`; recovered value from `normalized_events.amount_paise/100`
+instead of `decisions.ticket_inr`; would-be action cost from `spend_ledger`
+rung counts × policy `cost_inr` instead of `SUM(decisions.action_cost_inr)`.
+The arm check has a genuinely independent invariant: **every `decisions` row
+with `skip_reason='CONTROL_ARM'` must recompute to `control`** via
+`app.arms.assign_arm`; any disagreement is a FAIL. When the audit and the
+dashboard disagree, the fix goes in the dashboard — the audit is the check,
+not the source of truth.
+
+### Status
+
+`GET /metrics` returns 200 on an absent DB, an empty-schema DB, a one-decision
+DB (uplift → `insufficient sample (treatment n=1, control n=0)` against the
+real live `webhook_events.db`), and a full 300-customer DB. On the full DB the
+dashboard equals `audit_metrics.py` on all 24 metrics **and** the
+`control_arm_invariant` (12 CONTROL_ARM rows, 0 disagree) — 25/25 PASS,
+exit 0. The `72h` window is enforced from
+`events.updated_at − normalized_events.occurred_at` (audit path:
+`audit.outcome_observed.created_at`), verified by a recovery placed at +108h
+being excluded. LIVE money never prints a rupee figure implying money moved:
+`_REAL_SPEND_ENABLED` is False, every `spend_ledger` row is `status='dry_run'`
+at 0.00, and the would-be action cost is labelled dry-run. `grep` of
+`app/dashboard/` for `ground_truth` and `from eval` → no hits (BREAK 6). Full
+suite **236 passed** (229 prior + 7 BREAK tests); `render_readme_numbers.py
+--check` clean. Nothing committed (no-commit mode).

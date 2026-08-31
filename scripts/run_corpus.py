@@ -479,6 +479,83 @@ def provenance(events_path: Path, ground_truth_path: Path, policy: dict,
 
 
 # =========================================================================
+# Shared seam: ingest the corpus + drive the REAL pipeline, persist decisions
+# =========================================================================
+def build_decision_db(events_path, policy: dict, db_path, *, max_events=None) -> dict:
+    """Ingest every corpus event through the real ``card_failure`` adapter in
+    corpus order, drive :func:`app.pipeline.process_failure` once per event,
+    and return the ``decisions`` rows read back from ``db_path``.
+
+    ``max_events`` caps the number of (corpus-ordered) events processed -- the
+    same kind of knob as ``run_corpus split --limit-customers``; ``None`` (the
+    default, and what ``make_demo_db.py`` uses) processes the whole corpus.
+
+    This IS STEP 1's persistence path -- ``run_final`` calls it, and so does
+    ``scripts/make_demo_db.py`` (which just keeps the DB instead of throwing it
+    away). No parallel pipeline, no hand-written rows. Schema comes only from
+    the real init functions reached through ``Ingestor`` and
+    ``process_failure`` (-> ``store.init_decision_store`` -> ``app.db.init_db``,
+    plus ``app.guardrails`` via ``_apply_guardrails``).
+
+    ``db_path`` is created fresh (unlinked first). Deterministic: every value
+    written keys off the committed seed and each event's own payload
+    ``created_at`` -- no wall-clock -- so two runs produce an identical
+    ``decisions`` table (and identical ``inputs_hash`` set).
+    """
+    import sqlite3
+
+    events = json.loads(Path(events_path).read_text(encoding="utf-8"))["events"]
+    require_timestamps(events)
+    events_sorted = sorted(events, key=lambda ev: (ev["created_at"], ev["event_id"]))
+    if max_events is not None:
+        events_sorted = events_sorted[:max_events]
+
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    # -- ingest every event through the real adapter, in corpus order --
+    with Ingestor(str(db_path)) as ing:
+        for ev in events_sorted:
+            payload = {**ev["payload"], "created_at": ev["created_at"]}
+            ing.ingest("card_failure", payload)
+        rows = ing.rows()
+    row_by_pid = {r["reference"]: r for r in rows}
+
+    # -- drive the real pipeline once per event, in corpus order --
+    # (a second call for a payment_id is idempotent: it returns the decision
+    #  already on record and writes nothing.)
+    for ev in events_sorted:
+        entity = ev["payload"]["payload"]["payment"]["entity"]
+        process_failure(
+            entity["id"],
+            db_path=str(db_path),
+            policy=policy,
+            now_utc=iso_utc(ev["created_at"]),
+        )
+
+    # -- read back the authoritative decision record --
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    dec_rows = con.execute("SELECT * FROM decisions").fetchall()
+    con.close()
+    decision_by_pid = {r["payment_id"]: dict(r) for r in dec_rows}
+
+    if set(decision_by_pid) != set(row_by_pid):
+        missing = sorted(set(row_by_pid) - set(decision_by_pid))
+        raise SystemExit(
+            f"STOP: {len(missing)} ingested payments have no decision row "
+            f"(first few: {missing[:5]})"
+        )
+    return {
+        "decision_by_pid": decision_by_pid,
+        "row_by_pid": row_by_pid,
+        "rows": rows,
+    }
+
+
+# =========================================================================
 # STEP 1 -- full run, 2,000 events, locked 70/30, via the REAL pipeline
 # =========================================================================
 def run_final(args) -> None:
@@ -501,46 +578,17 @@ def run_final(args) -> None:
     corpus_max = iso_utc(events_sorted[-1]["created_at"])
 
     out_path = Path(args.out)
-    scratch_db = out_path.parent / ("_%s.db" % out_path.stem)
+    scratch_db = (
+        Path(args.decisions_db) if getattr(args, "decisions_db", None)
+        else out_path.parent / ("_%s.db" % out_path.stem)
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    if scratch_db.exists():
-        scratch_db.unlink()
 
-    # -- ingest every event through the real adapter, in corpus order --
-    with Ingestor(str(scratch_db)) as ing:
-        for ev in events_sorted:
-            payload = {**ev["payload"], "created_at": ev["created_at"]}
-            ing.ingest("card_failure", payload)
-        rows = ing.rows()
-    row_by_pid = {r["reference"]: r for r in rows}
-
-    # -- drive the real pipeline once per event, in corpus order --
-    # (a second call for a payment_id is idempotent: it returns the decision
-    #  already on record and writes nothing.)
-    for ev in events_sorted:
-        entity = ev["payload"]["payload"]["payment"]["entity"]
-        process_failure(
-            entity["id"],
-            db_path=str(scratch_db),
-            policy=policy,
-            now_utc=iso_utc(ev["created_at"]),
-        )
-
-    # -- read back the authoritative decision record --
-    import sqlite3
-
-    con = sqlite3.connect(str(scratch_db))
-    con.row_factory = sqlite3.Row
-    dec_rows = con.execute("SELECT * FROM decisions").fetchall()
-    con.close()
-    decision_by_pid = {r["payment_id"]: dict(r) for r in dec_rows}
-
-    if set(decision_by_pid) != set(row_by_pid):
-        missing = sorted(set(row_by_pid) - set(decision_by_pid))
-        raise SystemExit(
-            f"STOP: {len(missing)} ingested payments have no decision row "
-            f"(first few: {missing[:5]})"
-        )
+    # STEP 1's persistence path, now a shared function (make_demo_db.py reuses it).
+    built = build_decision_db(events_path, policy, scratch_db)
+    rows = built["rows"]
+    row_by_pid = built["row_by_pid"]
+    decision_by_pid = built["decision_by_pid"]
 
     env = Environment(str(ground_truth_path))
     if env.run_seed != seed:
@@ -1364,6 +1412,11 @@ def main(argv=None) -> None:
     f.add_argument("--ground-truth", default=str(DEFAULT_GROUND_TRUTH))
     f.add_argument("--policy", default=str(DEFAULT_POLICY))
     f.add_argument("--out", default=str(REPO / "results" / "final_run.json"))
+    f.add_argument(
+        "--decisions-db", default=None,
+        help="keep the decisions SQLite DB at this path instead of a throwaway "
+             "scratch file (used by scripts/make_demo_db.py)",
+    )
     f.set_defaults(func=run_final)
 
     s = sub.add_parser("split", help="STEP 2: first-500-customers split sweep")
