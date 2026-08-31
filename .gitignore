@@ -5,3 +5,12 @@ __pycache__/
 *.db
 .pytest_cache/
 data/
+
+# Slice 11 - run/freeze scratch. The committed artifacts are
+# results/final_run.json and results/split_comparison_500.json ONLY.
+results/*.meta.json
+results/_verify_*.json
+results/_*.db
+results/*.db-journal
+results/*.db-wal
+results/*.db-shm

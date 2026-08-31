@@ -1334,3 +1334,285 @@ PASS condition met. The live test-mode run (Runs 1–3 above) confirmed the
 provider-side dedup mechanism; `audit/slice10_idempotency.py` is clean on both
 ledgers. Full suite **229 passed** (218 prior unchanged + 11 new). The executor
 is **not** wired into `process_failure` yet — that is a later slice.
+
+## Slice 11 · corpus freeze (`scripts/run_corpus.py`, `scripts/render_readme_numbers.py`, `.github/workflows/ci.yml`)
+
+Runs the whole existing pipeline over the full 2,000-event corpus once and
+pins the result to two committed artifacts. Invents no behaviour: `Ingestor` →
+`app.diagnosis.diagnose` → `app.arms.assign_arm` →
+`app.pipeline.process_failure` (the real decision engine, guardrail walk-down
+included) → `eval.environment.Environment.resolve`. `scripts/` is offline
+tooling; nothing under `app/` imports it.
+
+### The two artifacts
+
+- **`results/final_run.json`** — STEP 1. All 2,000 events, locked 70:30 split,
+  driven through `process_failure` (idempotent per `payment_id`, so the
+  earliest event for a customer sets the decision). Aggregates are split by
+  unit and every field name carries its unit:
+  - `customer_level` (`n_customers` = 1611): arm counts, `recovery_rate_*`,
+    `recovery_count_*`, `incremental_uplift_pp`, `uplift_ci_95`,
+    `incremental_recoveries_count`, `total_recovered_value_inr`
+    (+ `_treatment_inr` / `_control_inr`), and — added in the corrections pass
+    below — `counterfactual_recovered_value_treatment_inr`,
+    `incremental_recovered_value_inr`,
+    `incremental_value_per_treated_customer_inr`, **`net_incremental_ev_inr`**
+    (the headline), the `mean_ticket_*` fields, `ticket_balance_check`, and the
+    generated `value_vs_count_note`.
+  - `event_level` (`n_events` = 2000): `action_counts_by_rung` (events),
+    `distinct_actions_by_rung` (unique `payment_id` per rung),
+    `skip_counts_by_reason`, `route_to_human_count`,
+    `suppressed_by_guardrail_count`, `total_action_cost_inr` (over DISTINCT
+    actions), `total_action_cost_events_inr` (kept for comparison).
+  - top-level `synthetic_provenance_note` (FIX 7, rendered first in the README
+    block) and `policy_selectivity_note`; aggregate-level
+    `gross_recovered_value_all_arms_inr` (demoted — see below) with its
+    warning sibling; `multi_failure_customers` = 369.
+  - `per_event`: 2,000 rows, one per event, **sorted by `event_id`**.
+- **`results/split_comparison_500.json`** — STEP 2. The **first 500
+  `customer_id`s in sorted order** (not 500 events); the resulting event count
+  is recorded as `n_events_in_slice` = 624 and `"scope": "500 customers"` is
+  stated inside the file. Treatment fraction swept 70:30 vs 90:10 via
+  `app.decision.engine.decide_with_ladder` — the only existing seam that takes
+  a `treatment_fraction` override without touching `config/` or
+  `eval.measurement`. Each split is cross-checked against
+  `eval.measurement.run_policy` (same arm hash, same resolver); a mismatch on
+  `(t_rec, t_n, c_rec, c_n)` is a hard `SystemExit`.
+
+### `now_utc` — per-event, from committed data (spec correction)
+
+Not a single pinned constant. For each event `now_utc` is derived from that
+event's own **top-level integer `created_at`** (unix epoch, UTC) in
+`data/events.json` — the only timestamp anywhere in the committed payload.
+`require_timestamps()` hard-stops the run if any event lacks a usable one; no
+wall-clock or constant fallback exists. Events are **processed** in ascending
+`(created_at, event_id)` order so guardrail/cooldown state accumulates in
+corpus order (`processing_order` string in the artifact); the `per_event`
+output block is **independently sorted by `event_id`** — processing order and
+output order are separate concerns. `provenance` carries `corpus_time_min` /
+`corpus_time_max` (2025-01-01T00:00:54+00:00 … 2025-01-20T23:45:50+00:00).
+
+Note: with this corpus each customer has exactly one `payment_id` and one
+decision row, so `_history`'s cooldown lookup never has a sibling row to fire
+against; the per-event `now_utc` still feeds the guardrail walk's time
+predicates and the provenance window.
+
+### Determinism contract
+
+`sort_keys`, every float rounded to 6 dp (`-0.0` normalised to `0.0`),
+`per_event` sorted by `event_id`, newline-terminated. No wall-clock / uuid /
+duration / run_id in the artifact — those go to a **gitignored** sibling
+`<name>.meta.json`. Every random draw keys off the committed seed 20260826
+(`assign:{seed}:{cid}` for the arm, `{seed}:{cid}` for outcome resolution) —
+no new unseeded source. Provenance block records `head_commit_sha` and
+sha256 of `events.json`, **`ground_truth.json`** (the dominant input to
+`recovered` — added per spec correction 3), `decision_policy.json`,
+`error_code_map.json`, `guardrails.json`.
+
+**Gate B evidence:** STEP 1 run three times (once to the committed path, twice
+to gitignored scratch) → all three byte-identical, and the seeded bootstrap
+(FIX 5) is inside that determinism. Successive frozen shas as the corrections
+landed: first draft `7dc982ff…` → FIX 1–4 `40c139da…` → FIX 5–6 `2c6c2d27…` →
+FIX 7 **STEP 1
+`6cf585211d3d691e225f232c9929dee0fc1eb15d422238b0c3f998eeb45b0b82`**, **STEP 2
+`333170f0fd5ca85f25e83a1cab4e582dd50e04a0626071b4321477bf45bb18ad`** (STEP 2
+unchanged since FIX 5–6 — FIX 7 only touches `run_final`). Only the
+`.meta.json` sibling varies between runs.
+
+### Headline numbers (full corpus, locked 70:30) — corrected set
+
+| # | Headline | Value |
+|---|----------|-------|
+| 1 | Incremental uplift, **count basis** | 9.91 pp (37.74% − 27.84%), ≈ 112 extra recoveries; Wilson [4.91, 14.67] pp |
+| 2 | 95% CI on uplift (Wilson-on-difference) | [4.91, 14.67] pp, width 9.76 pp |
+| 3 | Arm sizes | 1,126 treatment / 485 control of 1,611 (0 guardrail-blocked) |
+| 4 | **Distinct** actions (unique `payment_id` per rung) | 1,126 email nudges (1,388 across events); 0 EV-floor skips, 0 routed, 0 suppressed |
+| 5 | **Incremental** recovered value (value-weighted, counterfactual-subtracted) | ₹60,528.90 (₹53.76 per treated customer); 95% bootstrap **[−₹17,598, ₹136,475]** |
+| 6 | **Net incremental EV** (row 5 − ₹112.60 distinct action cost) | ₹60,416.30; 95% bootstrap **[−₹17,710, ₹136,363]** |
+
+**Row 6's lower bound is below zero.** The count-basis uplift (row 1) is
+significant; the value-weighted EV is **not distinguishable from zero at 95%**
+on this corpus. The ₹ point estimates are directional, not bankable — see FIX 5
+and the corrected FIX 6 reconciliation below.
+
+Rows 5–6 are both on the treated-customer basis (1,126). Every treatment ACT
+lands on the `email` rung and all seven guardrails pass, so the guardrail
+walk-down ran for real on all 1,126 treatment customers and was **inert**
+(`n_treatment_blocked_customers` = 0). `render_readme_numbers.py` renders these
+six plus the `value_vs_count_note` and `policy_selectivity_note` (verbatim from
+the artifact) into README.md between the generated-numbers markers; `--check`
+re-derives them and exits non-zero on any drift.
+
+### Corrections before freeze — the first frozen draft was wrong on the headline
+
+The first draft (sha `7dc982ff…`) quoted **`net_ev_realised_inr` = ₹479,695.20**
+as the headline EV. That figure summed recovered value across **both arms**,
+control included, and subtracted only action cost — it counted self-recovery
+the policy did not cause. That is the raw-recovery fallacy this project exists
+to refute, quoted as if it were an uplift number. Seven fixes across three
+review rounds (1–4, then 5–6, then 7), applied and re-frozen:
+
+1. **Net EV demoted.** `net_ev_realised_inr` → `gross_recovered_value_all_arms_inr`
+   (value unchanged, ₹479,695.20) with a warning sibling string that it is NOT
+   an uplift figure and must not be quoted as one; it does **not** appear in
+   the README. The headline is now **`net_incremental_ev_inr` = ₹60,416.30** =
+   `incremental_recovered_value_inr` (treatment recovered value − control
+   recovered-value-per-capita × treatment headcount = ₹60,528.90) − distinct
+   action cost ₹112.60. `incremental_value_per_treated_customer_inr` = ₹53.76.
+
+2. **Count basis vs value basis surfaced.** `incremental_recoveries_count`
+   = 425 − 0.2784 × 1126 = **111.6** extra recoveries. At the pooled mean
+   recovered ticket (₹857) that implies ₹95,605 of value; the value-based
+   figure is ₹60,529 — **63%** of it, a ₹35,076 gap. `ticket_balance_check`
+   shows the arms are balanced on ticket (mean ₹877.92 treatment vs ₹859.03
+   control, **+2.2%**; assignment is a pure sha256 on `customer_id`), so the
+   gap is **not** arm imbalance. The nudge's incremental band does skew to
+   smaller tickets (incremental-band mean ₹786 vs population ₹872, ratio 0.90;
+   raw self-recovery probability has ~no linear ticket correlation, Pearson
+   −0.01, so it is *lift* not baseline recovery that concentrates in small
+   tickets) — **but** (corrected under FIX 6) that skew explains only ₹7,893 of
+   the ₹35,076 gap. The residual ₹27,182 is not a mechanism; the bootstrap
+   (FIX 5) shows it is sampling noise. See FIX 6.
+
+3. **Distinct vs event action counts.** `process_failure` is idempotent per
+   `payment_id`, so the 1,388 email *events* are **1,126** distinct sends.
+   `distinct_actions_by_rung` and a DISTINCT-basis `total_action_cost_inr`
+   (₹112.60) are new; the event-weighted figures stay as
+   `action_counts_by_rung` / `total_action_cost_events_inr` (₹138.80) for
+   comparison. README quotes the distinct count.
+
+4. **EV gate never fires on this corpus — recorded.** New top-level
+   `policy_selectivity_note`: zero `EV_BELOW_FLOOR`, zero `ROUTE_TO_HUMAN`,
+   zero guardrail blocks, one rung across 2,000 events, so the policy is
+   behaviourally identical to `recover_everything` here. Reason: email costs
+   ₹0.10; EV = p_incremental_effective × ticket − cost clears the ₹2.00 floor
+   for every event. The rules classifier emits only two causes —
+   `bank_downtime` (break-even ticket **₹47.25**, solved from the engine's own
+   arithmetic) and `insufficient_funds` (**₹39.44**). The smallest ticket in
+   the corpus is **₹49.00**, above both — the tightest margin is **₹1.75**
+   (bank_downtime). Phone coverage is **0%**, so the sms / whatsapp /
+   agent_call rungs are unreachable and the ladder collapses to email-only;
+   the higher-cost rungs where the floor and the human-review route bind
+   cannot be exercised by this corpus. Slice 8's live webhook *did* produce
+   SKIP / `EV_BELOW_FLOOR` on a ₹10 ticket (`pay_TW67GAczusj3yl`, EV ₹0.46 vs
+   the ₹2.00 floor) — the standing evidence the gate works.
+
+5. **`net_incremental_ev_inr` now carries an error bar.** It is the headline
+   money figure and was quoted bare while the count-basis uplift had a Wilson
+   interval — an asymmetry. Per-customer recovered value is zero-inflated and
+   heavy-tailed, so the interval is a **seeded stratified percentile
+   bootstrap**, not a normal approximation: 10,000 resamples, treatment
+   (n=1126) and control (n=485) resampled independently, with replacement, at
+   observed n; per-resample RNG seeded `sha256("bootstrap:{seed}:{i}")` — a
+   **third** namespace, non-overlapping with `assign:` and the bare
+   `{seed}:{cid}` resolve draw (recorded in `provenance.bootstrap_seed_basis`);
+   2.5 / 97.5 linear-interpolated percentiles. Deterministic — Gate B stayed
+   three-way byte-identical with the bootstrap in. New `customer_level` fields:
+   `incremental_value_per_treated_customer_ci_95` **[−₹15.63, ₹121.20]**,
+   `incremental_recovered_value_ci_95` **[−₹17,598, ₹136,475]**,
+   `net_incremental_ev_ci_95` **[−₹17,710, ₹136,363]**. **The lower bound is
+   below zero: the value-weighted incremental EV is not distinguishable from
+   zero at 95% on this corpus.** Stated plainly in `value_vs_count_note` and in
+   the README generated block, not buried.
+
+6. **`value_vs_count_note` no longer overclaims the mechanism.** The earlier
+   note pinned the whole 37% count-vs-value shortfall on the small-ticket skew
+   of the incremental band, but the magnitudes do not support that:
+   `implied_mean_ticket_per_incremental_recovery_inr` = ₹60,528.90 / 111.577 =
+   **₹542**, whereas `mean_ticket_incremental_band_inr` = ₹786 — the 0.90 band
+   ratio only accounts for `band_explained_shortfall_inr` = 111.577 × (857 −
+   786) = **₹7,893** of the **₹35,076** gap. The
+   `residual_unexplained_shortfall_inr` = **₹27,182** is not a mechanism: the
+   FIX 5 bootstrap interval on incremental recovered value ([−₹17,598,
+   ₹136,475]) **contains** the count-implied ₹95,605, so the count and value
+   estimates are **not statistically distinguishable at n=485 control** — the
+   apparent gap is consistent with sampling noise in a heavy-tailed,
+   zero-inflated value estimator. The note now states, in order: both
+   estimates and the gap; arms balanced (+2.2%), so not arm imbalance; band
+   skew real but explains only ₹7,893; residual ₹27,182 and the interval
+   containing the count figure ⇒ underpowered on value at n=485 control;
+   headline is `net_incremental_ev_inr` with its bootstrap interval, count-basis
+   uplift reported beside it. No mechanism is claimed that the interval cannot
+   separate from noise.
+
+7. **The uplift is a property of the generator — said so, above the numbers.**
+   Outcomes come from `eval/environment.py` resolving the latent parameters our
+   own `datagen.py` wrote into `data/ground_truth.json`; they are not observed
+   from a payment processor. New top-level `synthetic_provenance_note` (rendered
+   into the README block **above** the headline table, as a blockquote, so the
+   caveat is read first) states: (a) outcomes are resolved, not observed; (b)
+   this run validates the **measurement apparatus** — blind arm assignment on
+   `customer_id`, counterfactual subtraction, attribution window, interval
+   estimation — not real-world recovery; (c) the one real-world datapoint is
+   Slice 8's live Razorpay webhook (`insufficient_funds`, ₹10 ticket, best rung
+   sms, terminal SKIP / `EV_BELOW_FLOOR`); (d) what would make it a real claim —
+   the same pipeline on live webhooks with an observed recovery feed and a
+   control arm large enough to bound the value-weighted estimate. From the
+   bootstrap: the `net_incremental_ev_ci_95` lower bound is −₹17,710 at
+   n_control = 485; SE ∝ 1/√n, and pushing the lower bound above zero at the
+   observed effect size needs SE to shrink ~1.3×, i.e. n_control on the order of
+   **~800** (≈2× today's 485) — a few thousand customers total at 70:30, **order
+   10³** — and that is a floor (assumes the effect size holds and the tail does
+   not worsen).
+
+### CI on the difference is Wilson, not Wald — and `eval.measurement` was NOT changed
+
+The Slice 11 spec asks for **Wilson on the difference** for both artifacts.
+`run_corpus.py` computes the Newcombe (1998) hybrid score interval — the two
+single-proportion Wilson intervals combined into a difference interval — and
+names it in the file (`"method": "Newcombe 1998 hybrid score (Wilson-based) on
+the difference, 95%"`).
+
+`eval.measurement._wald_ci` still computes a plain **Wald** interval on the
+difference and is **left untouched** — changing it would move numbers baked
+into earlier slices' committed outputs and tests. The two disagree, as
+expected, on the full run:
+
+| Interval | 95% CI on uplift |
+|---|---|
+| Wald (`eval.measurement`, unchanged) | [5.02, 14.80] pp |
+| Wilson / Newcombe (`run_corpus.py`, this slice) | [4.91, 14.67] pp |
+
+Both exclude zero; Wilson is the slightly tighter, boundary-respecting one and
+is what the artifacts and README report. On the 90:10 sensitivity split the
+Wilson lower bound crosses zero ([−0.90, 26.61] pp) — the 43-customer control
+arm can no longer separate the uplift from noise; that is the whole point of
+the sweep and `70:30` is kept.
+
+### Tests
+
+**229, unchanged** (same suite as Slice 10). This slice adds only offline
+tooling under `scripts/` and a CI workflow — no `app/` behaviour changed, so no
+new unit tests. `run_corpus.py` instead self-checks at runtime: STEP 1 asserts
+every ingested payment has a decision row and that the engine's own
+`_compute_ladder` reproduces each persisted best-rung EV; STEP 2 asserts each
+swept split matches `eval.measurement.run_policy` exactly.
+
+`.github/workflows/ci.yml` (`test-and-freeze`): regenerate `data/` from the
+seed (it is gitignored), run the full suite, then the **re-run-and-diff break
+condition** — a fresh `run_corpus.py final` / `split` must reproduce the two
+committed artifacts byte-for-byte (`diff -u`), so any drift in datagen, the
+pipeline, or the engine fails the build — and finally
+`render_readme_numbers.py --check`.
+
+### Status
+
+Two frozen artifacts, corrected and re-frozen three times (FIX 1–4, FIX 5–6,
+FIX 7). Final shas: STEP 1
+`6cf585211d3d691e225f232c9929dee0fc1eb15d422238b0c3f998eeb45b0b82`, STEP 2
+`333170f0fd5ca85f25e83a1cab4e582dd50e04a0626071b4321477bf45bb18ad`;
+byte-identical across three runs each (seeded bootstrap included). README
+generated block regenerated and `--check`-clean. Full suite **229 passed**. The
+re-run-and-diff break condition, `render_readme_numbers.py --check`, and
+`pytest` all exit 0.
+
+Bottom line on the numbers: the **count-basis** uplift is solid — 9.91 pp,
+Wilson [4.91, 14.67] pp, ~112 extra recoveries. The **value-weighted**
+incremental EV (₹60,416) has a bootstrap 95% interval of [−₹17,710, ₹136,363]
+and is **not distinguishable from zero** at n=485 control; it is reported with
+that interval, never bare.
+
+Not committed in this session (no-commit mode in force): the corrected files,
+diffs, test run and exit codes were produced and nothing was committed. The
+first frozen draft's gross-as-net-EV error and the FIX 6 over-claim are both
+recorded above, not rewritten away. Commit message pending separate approval.

@@ -1,0 +1,133 @@
+{
+  "action_to_recovery_mapping": "terminal ACT -> customer resolved under action \"nudge\"; terminal SKIP / ROUTE_TO_HUMAN / BLOCKED/* -> resolved under \"none\"; every control-arm customer is resolved under \"none\" (the untouched baseline)",
+  "artifact": "slice11_split_comparison",
+  "attribution_window_note": "there is no time-windowed attribution in this system: `recovered` is a static per-customer counterfactual draw (eval.environment.Environment.resolve, sha256(\"{seed}:{customer_id}\")), so attribution_window is \"none\" on every row",
+  "delta": {
+    "compared": "90:10 minus 70:30",
+    "d_control_self_recovery_rate_pp": -1.580203,
+    "d_incremental_uplift_pp": 0.717015,
+    "d_n_control_customers": -113,
+    "d_n_treatment_customers": 113,
+    "d_uplift_ci_width_pp": 9.899398
+  },
+  "locked_split": "70:30",
+  "mechanism_note": "STEP 2 runs app.decision.engine.decide_with_ladder directly with arm assignment at the swept treatment_fraction -- the only existing seam that accepts the override without editing config/decision_policy.json or eval.measurement. Each split is cross-checked against eval.measurement.run_policy (same arm hash, same resolver). Guardrails are not re-run here; STEP 1 (the full pipeline, guardrail walk included) shows every ACT is the email rung and all seven guardrails pass, so the walk is inert and n_treatment_blocked_customers is 0 there.",
+  "n_customers_in_slice": 500,
+  "n_events_in_slice": 624,
+  "processing_order": "customers taken in ascending customer_id order; arm assignment and outcome resolution are both order-invariant pure hashes",
+  "provenance": {
+    "bootstrap_seed_basis": "sha256(\"bootstrap:20260826:{i}\") -> first 8 bytes -> big-endian int -> random.Random seed, one per resample. Deliberately distinct from the \"assign:\" and bare \"{seed}:{cid}\" prefixes so the resampling shares no entropy with arm assignment or outcome resolution.",
+    "corpus_time_max": "2025-01-20T23:45:50+00:00",
+    "corpus_time_min": "2025-01-01T00:00:54+00:00",
+    "head_commit_sha": "70e54057c33d5bf70009bc413737eca60194cf39",
+    "n_customers": 500,
+    "n_events": 624,
+    "policy_version": "s7.1",
+    "rng_seed": 20260826,
+    "rng_seed_basis": "single value 20260826: config/decision_policy.json.experiment_seed (arm assignment, sha256(\"assign:{seed}:{cid}\")) AND data/ground_truth.json.meta.seed (outcome resolution, sha256(\"{seed}:{cid}\")). The value-weighted bootstrap CI adds a THIRD, non-overlapping namespace: per-resample RNG seeded sha256(\"bootstrap:{seed}:{i}\") for i in 0..n_resamples-1. No other random source is used.",
+    "sha256_decision_policy_json": "570ba0d29c8a12399ea5d1b6a3aecaef203cf7778e7025068221b18160cd5dd3",
+    "sha256_error_code_map_json": "eea8b90fd3eda8ea6aeb26e5488858de3581c86d190d935cc239b5552dbf438a",
+    "sha256_events_json": "5999f0ea6f48b1b3da9491f1471a84155e558f076ae8f249a81fc34b6003856a",
+    "sha256_ground_truth_json": "8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad",
+    "sha256_guardrails_json": "94ca0400c73744db434104698b625a022935c3e0cde689b37113c646c3a3ec97"
+  },
+  "reading": "The locked decision is 70:30. This artifact does NOT change it. Moving to 90:10 buys more treated customers (344 -> 457) but shrinks the control arm (156 -> 43), so the control self-recovery estimate gets noisier and the 95% interval on incremental uplift widens from 17.60 pp to 27.50 pp. 90/10 is a measurement-cost trade, not a lift improvement; 70:30 is kept.",
+  "scope": "500 customers",
+  "slice_rule": "the first 500 customer_ids in ascending lexical order of the normalized rows returned by eval.measurement.load_population (one row per customer after Ingestor source:reference dedupe)",
+  "splits": {
+    "70:30": {
+      "customer_level": {
+        "control_self_recovery_rate": 0.294872,
+        "counterfactual_recovered_value_treatment_inr": 95142.461538,
+        "incremental_recovered_value_inr": 35639.538462,
+        "incremental_recoveries_count": 47.564103,
+        "incremental_uplift_pp": 13.826774,
+        "n_control_customers": 156,
+        "n_customers": 500,
+        "n_treatment_blocked_customers": 0,
+        "n_treatment_customers": 344,
+        "net_incremental_ev_inr": 35605.138462,
+        "recovery_count_control": 46,
+        "recovery_count_treatment": 149,
+        "recovery_rate_control": 0.294872,
+        "recovery_rate_treatment": 0.43314,
+        "total_recovered_value_control_inr": 43146.0,
+        "total_recovered_value_inr": 173928.0,
+        "total_recovered_value_treatment_inr": 130782.0,
+        "uplift_ci_95": {
+          "high": 0.222745,
+          "high_pp": 22.274543,
+          "low": 0.046725,
+          "low_pp": 4.672541,
+          "method": "Newcombe 1998 hybrid score (Wilson-based) on the difference, 95%",
+          "width": 0.17602,
+          "width_pp": 17.602003
+        }
+      },
+      "event_level": {
+        "action_counts_by_rung": {
+          "email": 426
+        },
+        "distinct_actions_by_rung": {
+          "email": 344
+        },
+        "route_to_human_count": 0,
+        "skip_counts_by_reason": {
+          "CONTROL_ARM": 198
+        },
+        "suppressed_by_guardrail_count": 0,
+        "total_action_cost_events_inr": 42.6,
+        "total_action_cost_inr": 34.4
+      },
+      "gross_recovered_value_all_arms_inr": 173885.4,
+      "gross_recovered_value_all_arms_note": "DEMOTED (was 'net_ev_realised_inr'). Gross recovered value across BOTH arms minus event-level action cost; counts self-recovery the policy did not cause. NOT an uplift figure. Headline is customer_level.net_incremental_ev_inr."
+    },
+    "90:10": {
+      "customer_level": {
+        "control_self_recovery_rate": 0.27907,
+        "counterfactual_recovered_value_treatment_inr": 128905.883721,
+        "incremental_recovered_value_inr": 39785.116279,
+        "incremental_recoveries_count": 66.465116,
+        "incremental_uplift_pp": 14.543789,
+        "n_control_customers": 43,
+        "n_customers": 500,
+        "n_treatment_blocked_customers": 0,
+        "n_treatment_customers": 457,
+        "net_incremental_ev_inr": 39739.416279,
+        "recovery_count_control": 12,
+        "recovery_count_treatment": 194,
+        "recovery_rate_control": 0.27907,
+        "recovery_rate_treatment": 0.424508,
+        "total_recovered_value_control_inr": 12129.0,
+        "total_recovered_value_inr": 180820.0,
+        "total_recovered_value_treatment_inr": 168691.0,
+        "uplift_ci_95": {
+          "high": 0.266059,
+          "high_pp": 26.605876,
+          "low": -0.008955,
+          "low_pp": -0.895525,
+          "method": "Newcombe 1998 hybrid score (Wilson-based) on the difference, 95%",
+          "width": 0.275014,
+          "width_pp": 27.501401
+        }
+      },
+      "event_level": {
+        "action_counts_by_rung": {
+          "email": 575
+        },
+        "distinct_actions_by_rung": {
+          "email": 457
+        },
+        "route_to_human_count": 0,
+        "skip_counts_by_reason": {
+          "CONTROL_ARM": 49
+        },
+        "suppressed_by_guardrail_count": 0,
+        "total_action_cost_events_inr": 57.5,
+        "total_action_cost_inr": 45.7
+      },
+      "gross_recovered_value_all_arms_inr": 180762.5,
+      "gross_recovered_value_all_arms_note": "DEMOTED (was 'net_ev_realised_inr'). Gross recovered value across BOTH arms minus event-level action cost; counts self-recovery the policy did not cause. NOT an uplift figure. Headline is customer_level.net_incremental_ev_inr."
+    }
+  }
+}
