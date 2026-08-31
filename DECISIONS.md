@@ -1404,20 +1404,21 @@ predicates and the provenance window.
 duration / run_id in the artifact — those go to a **gitignored** sibling
 `<name>.meta.json`. Every random draw keys off the committed seed 20260826
 (`assign:{seed}:{cid}` for the arm, `{seed}:{cid}` for outcome resolution) —
-no new unseeded source. Provenance block records `head_commit_sha` and
-sha256 of `events.json`, **`ground_truth.json`** (the dominant input to
-`recovered` — added per spec correction 3), `decision_policy.json`,
-`error_code_map.json`, `guardrails.json`.
+no new unseeded source. Provenance block records the sha256 of `events.json`,
+**`ground_truth.json`** (the dominant input to `recovered` — added per spec
+correction 3), `decision_policy.json`, `error_code_map.json`, `guardrails.json`
+— the inputs that actually pin the run. It does **not** record a commit sha
+(see FIX 8): the git commit that carries the artifact is its commit provenance.
 
 **Gate B evidence:** STEP 1 run three times (once to the committed path, twice
 to gitignored scratch) → all three byte-identical, and the seeded bootstrap
 (FIX 5) is inside that determinism. Successive frozen shas as the corrections
 landed: first draft `7dc982ff…` → FIX 1–4 `40c139da…` → FIX 5–6 `2c6c2d27…` →
-FIX 7 **STEP 1
-`6cf585211d3d691e225f232c9929dee0fc1eb15d422238b0c3f998eeb45b0b82`**, **STEP 2
-`333170f0fd5ca85f25e83a1cab4e582dd50e04a0626071b4321477bf45bb18ad`** (STEP 2
-unchanged since FIX 5–6 — FIX 7 only touches `run_final`). Only the
-`.meta.json` sibling varies between runs.
+FIX 7 `6cf58521…` → FIX 8 **STEP 1
+`24bbd765d8aec0ec4c8f0155f1b885eefa2f29a6944a06752c1f9f2e207025b3`**, **STEP 2
+`31f157c06245a50e4c847b008b9718fe280c71b62dc15da898c1dc15401b3c37`** (FIX 8
+drops one line from each, so both shas move). Only the `.meta.json` sibling
+varies between runs.
 
 ### Headline numbers (full corpus, locked 70:30) — corrected set
 
@@ -1449,8 +1450,9 @@ The first draft (sha `7dc982ff…`) quoted **`net_ev_realised_inr` = ₹479,695.
 as the headline EV. That figure summed recovered value across **both arms**,
 control included, and subtracted only action cost — it counted self-recovery
 the policy did not cause. That is the raw-recovery fallacy this project exists
-to refute, quoted as if it were an uplift number. Seven fixes across three
-review rounds (1–4, then 5–6, then 7), applied and re-frozen:
+to refute, quoted as if it were an uplift number. Eight fixes across four
+review rounds (1–4, then 5–6, then 7, then 8 after the first push failed CI),
+applied and re-frozen:
 
 1. **Net EV demoted.** `net_ev_realised_inr` → `gross_recovered_value_all_arms_inr`
    (value unchanged, ₹479,695.20) with a warning sibling string that it is NOT
@@ -1555,6 +1557,23 @@ review rounds (1–4, then 5–6, then 7), applied and re-frozen:
    10³** — and that is a floor (assumes the effect size holds and the tail does
    not worsen).
 
+8. **`head_commit_sha` removed from the provenance block.** The first push
+   (`af6ae4e`) failed CI. `provenance.head_commit_sha` was
+   `70e54057…` — the commit *before* Slice 11 — because the artifact was frozen
+   before it was committed. CI checks out the pushed commit, re-runs, writes
+   the pushed sha into that field, and the re-run-and-diff fails on that one
+   line. It is a fixed point: recording HEAD inside a file you are about to
+   commit is unsatisfiable, since writing the file moves HEAD. Fix: **delete
+   the field** (and the now-dead `git_head()` / `subprocess` import). Not: an
+   `--ignore` flag, a diff exclusion, or a non-blocking step. The commit that
+   carries `results/final_run.json` *is* its commit provenance —
+   `git log --oneline -- results/final_run.json` answers the question the field
+   was trying to answer, and answers it correctly. The five input sha256s
+   (`events`, `ground_truth`, `decision_policy`, `error_code_map`,
+   `guardrails`) are what actually pin the run and are not self-referential;
+   they stay. Same check applied to `results/split_comparison_500.json` — it
+   used the same `provenance()` helper, so the one deletion fixes both.
+
 ### CI on the difference is Wilson, not Wald — and `eval.measurement` was NOT changed
 
 The Slice 11 spec asks for **Wilson on the difference** for both artifacts.
@@ -1597,10 +1616,11 @@ pipeline, or the engine fails the build — and finally
 
 ### Status
 
-Two frozen artifacts, corrected and re-frozen three times (FIX 1–4, FIX 5–6,
-FIX 7). Final shas: STEP 1
-`6cf585211d3d691e225f232c9929dee0fc1eb15d422238b0c3f998eeb45b0b82`, STEP 2
-`333170f0fd5ca85f25e83a1cab4e582dd50e04a0626071b4321477bf45bb18ad`;
+Two frozen artifacts, corrected and re-frozen four times (FIX 1–4, FIX 5–6,
+FIX 7, FIX 8 after the first push failed CI on the self-referential commit
+sha). Final shas: STEP 1
+`24bbd765d8aec0ec4c8f0155f1b885eefa2f29a6944a06752c1f9f2e207025b3`, STEP 2
+`31f157c06245a50e4c847b008b9718fe280c71b62dc15da898c1dc15401b3c37`;
 byte-identical across three runs each (seeded bootstrap included). README
 generated block regenerated and `--check`-clean. Full suite **229 passed**. The
 re-run-and-diff break condition, `render_readme_numbers.py --check`, and

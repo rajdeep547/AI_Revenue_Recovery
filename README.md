@@ -319,5 +319,5 @@ Rows 5–6 are both on the treated-customer basis (1,126 customers); 369 custome
 
 Reading: The locked decision is 70:30. This artifact does NOT change it. Moving to 90:10 buys more treated customers (344 -> 457) but shrinks the control arm (156 -> 43), so the control self-recovery estimate gets noisier and the 95% interval on incremental uplift widens from 17.60 pp to 27.50 pp. 90/10 is a measurement-cost trade, not a lift improvement; 70:30 is kept.
 
-Provenance: HEAD `70e54057`, events.json `5999f0ea`, ground_truth.json `8dba9b00`, decision_policy.json `570ba0d2`, seed 20260826, corpus 2025-01-01T00:00:54+00:00 … 2025-01-20T23:45:50+00:00.
+Provenance (the commit that carries this artifact is the rest of it): events.json `5999f0ea`, ground_truth.json `8dba9b00`, decision_policy.json `570ba0d2`, seed 20260826, corpus 2025-01-01T00:00:54+00:00 … 2025-01-20T23:45:50+00:00.
 <!-- END GENERATED NUMBERS -->

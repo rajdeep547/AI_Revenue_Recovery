@@ -187,7 +187,7 @@ def render_block() -> str:
     add(f"Reading: {split['reading']}")
     add("")
     add(
-        "Provenance: HEAD `" + short_sha(prov["head_commit_sha"]) + "`, "
+        "Provenance (the commit that carries this artifact is the rest of it): "
         "events.json `" + short_sha(prov["sha256_events_json"]) + "`, "
         "ground_truth.json `" + short_sha(prov["sha256_ground_truth_json"]) + "`, "
         "decision_policy.json `"

@@ -41,7 +41,6 @@ import math
 import os
 import platform
 import shutil
-import subprocess
 import sys
 import time
 from collections import Counter
@@ -98,14 +97,6 @@ ACTION_TO_RECOVERY_MAPPING = (
 # --------------------------------------------------------------------- helpers
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def git_head() -> str:
-    out = subprocess.run(
-        ["git", "-C", str(REPO), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
-    )
-    return out.stdout.strip()
 
 
 def iso_utc(epoch: int | float) -> str:
@@ -378,9 +369,14 @@ def best_rung_and_ev(policy: dict, event: dict, decision_row: dict) -> tuple:
 def provenance(events_path: Path, ground_truth_path: Path, policy: dict,
                corpus_min: str, corpus_max: str, n_customers: int,
                n_events: int) -> dict:
+    # NB: no commit sha here. Recording HEAD inside a file about to be committed
+    # is a fixed point (writing the file moves HEAD), and it broke CI's
+    # re-run-and-diff on the first push. The commit that contains this artifact
+    # IS its provenance -- `git log --oneline -- results/final_run.json`. The
+    # input sha256s below are what actually pin the run and are not
+    # self-referential.
     seed = policy["experiment_seed"]
     return {
-        "head_commit_sha": git_head(),
         "sha256_events_json": sha256_file(events_path),
         "sha256_decision_policy_json": sha256_file(DEFAULT_POLICY),
         "sha256_error_code_map_json": sha256_file(ERROR_CODE_MAP),

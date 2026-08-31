@@ -28096,7 +28096,6 @@
     "bootstrap_seed_basis": "sha256(\"bootstrap:20260826:{i}\") -> first 8 bytes -> big-endian int -> random.Random seed, one per resample. Deliberately distinct from the \"assign:\" and bare \"{seed}:{cid}\" prefixes so the resampling shares no entropy with arm assignment or outcome resolution.",
     "corpus_time_max": "2025-01-20T23:45:50+00:00",
     "corpus_time_min": "2025-01-01T00:00:54+00:00",
-    "head_commit_sha": "70e54057c33d5bf70009bc413737eca60194cf39",
     "n_customers": 1611,
     "n_events": 2000,
     "policy_version": "s7.1",
