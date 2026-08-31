@@ -16,6 +16,7 @@ from app.decision.engine import (
     SkipReason,
     Terminal,
     decide,
+    decide_with_ladder,
     load_policy,
 )
 from app.decision.rationale import render
@@ -26,6 +27,7 @@ __all__ = [
     "SkipReason",
     "Terminal",
     "decide",
+    "decide_with_ladder",
     "load_policy",
     "render",
 ]

@@ -315,6 +315,26 @@ def _finish(d: Decision) -> Decision:
 
 
 def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
+    """The Slice 7 surface: the :class:`Decision` only."""
+    return _decide(event, policy, arm, history)[0]
+
+
+def decide_with_ladder(
+    event: dict, policy: dict, arm: str, history: dict
+) -> tuple[Decision, list[dict] | None]:
+    """Like :func:`decide`, but also hands back the EV-ranked, channel-eligible
+    ``action_ladder`` entries (policy dicts, best-EV first) -- but ONLY when the
+    decision terminated ``ACT``. For every other terminal (the pre-ladder hard
+    gates, ``CONTROL_ARM``, ``EV_BELOW_FLOOR``, ``ROUTE_TO_HUMAN``) the second
+    element is ``None``, so the Slice 9b runtime cannot route a skip / route
+    through ``guardrails.walk_ladder``.
+    """
+    return _decide(event, policy, arm, history)
+
+
+def _decide(
+    event: dict, policy: dict, arm: str, history: dict
+) -> tuple[Decision, list[dict] | None]:
     payment_id = event["payment_id"]
     policy_version = policy["policy_version"]
     cause = event["cause"]
@@ -331,9 +351,10 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
         )
     prior = float(priors[cause]["p_incremental"])
 
-    def _pre_ladder_skip(reason: SkipReason, *, ev_inr=None) -> Decision:
+    def _pre_ladder_skip(reason: SkipReason, *, ev_inr=None) -> tuple[Decision, None]:
         """Hard-gate / PRIOR_ZERO exit: no EV arithmetic, ladder untouched.
-        Prior is a dict lookup so it is recorded; the rest is None."""
+        Prior is a dict lookup so it is recorded; the rest is None. Second
+        tuple element is ``None`` -- these never reach the guardrail walk."""
         return _finish(Decision(
             payment_id=payment_id, policy_version=policy_version,
             terminal=Terminal.SKIP, action=None, skip_reason=reason,
@@ -344,7 +365,7 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
             ev_lower_inr=None, shadow_action=None, gate_basis="hard_gate",
             route_ticket_floor_inr=None, route_confidence_ceiling=None,
             rationale="", inputs_hash=inputs_hash,
-        ))
+        )), None
 
     # --- (a) hard gates -- before any EV arithmetic, before the ladder ---
     if bool(event.get("risk_blocked", False)):
@@ -369,8 +390,12 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
     if _self_recovered_in_control(history):
         history_multiplier = 0.25
         p_effective *= history_multiplier
-    # (e) best rung
+    # (e) best rung + the full EV ranking (best-first), for the Slice 9b walk
     best, _ladder = _compute_ladder(policy, event, p_effective, ticket_inr)
+    _by_name = {r["name"]: r for r in policy["action_ladder"]}
+    ranked_rungs = [
+        _by_name[e.name] for e in sorted(_ladder, key=lambda e: (-e.ev, e.cost))
+    ]
     # (f) confidence-haircut downside EV -- recorded as a diagnostic, gates nothing
     p_lower_bound = p_effective * max(confidence, policy["confidence_penalty_floor"])
     ev_lower_inr = _ev_lower(best, p_lower_bound, ticket_inr)
@@ -404,7 +429,7 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
             shadow_action=best.name if would_act else None,
             gate_basis="experiment",
             route_ticket_floor_inr=None, route_confidence_ceiling=None, **common,
-        ))
+        )), None
 
     # --- (h) EV floor ---
     if best.ev < policy["min_ev_inr"]:
@@ -413,7 +438,7 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
             skip_reason=SkipReason.EV_BELOW_FLOOR, shadow_action=None,
             gate_basis="expected_value",
             route_ticket_floor_inr=None, route_confidence_ceiling=None, **common,
-        ))
+        )), None
 
     # --- (i) policy override -> a person must authorise ---
     if routed:
@@ -424,11 +449,11 @@ def decide(event: dict, policy: dict, arm: str, history: dict) -> Decision:
             skip_reason=None, shadow_action=None, gate_basis="policy_override",
             route_ticket_floor_inr=policy["human_review_ticket_inr"],
             route_confidence_ceiling=policy["review_confidence_threshold"], **common,
-        ))
+        )), None
 
-    # --- (j) act ---
+    # --- (j) act -- the ONLY terminal that hands the EV ranking onward ---
     return _finish(Decision(
         terminal=Terminal.ACT, action=best.name,
         skip_reason=None, shadow_action=None, gate_basis="expected_value",
         route_ticket_floor_inr=None, route_confidence_ceiling=None, **common,
-    ))
+    )), ranked_rungs

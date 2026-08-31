@@ -1029,3 +1029,153 @@ debit on another IST day not counting), `test_dry_run_does_not_debit_spend`,
 `test_quiet_hours_and_spend_cap_both_recorded` (the anti-short-circuit canary),
 `test_treatment_blocked_excluded_from_uplift_denominator`. Full suite: **211
 passed** (202 prior + 9), prior counts unchanged.
+
+---
+
+## Slice 9b · wiring the guardrails in (`app/decision/engine.py`, `app/pipeline.py`, `app/guardrails.py`, `eval/measurement.py`)
+
+### 1. Caps count *commitments*, not debits
+
+`attempt_cap` and `contact_limit` were counting `spend_ledger` rows with
+`status='debit'`. Nothing dispatches and there is no transport, so every
+committed action is written `status='dry_run'` — both caps were dead in every
+runnable mode. `_count_payment_actions` and `_count_contact_actions_since` (and
+therefore `load_state`) now count `status IN ('debit','dry_run')` — every
+action the policy *committed to*, whether or not money moved. `status='blocked'`
+stays uncounted: a blocked action consumed no attempt and reached no customer.
+The money `spend_cap` is unchanged — `spent_today_inr` still sums `debit` rows
+only. `test_attempt_cap_blocks_after_max` and
+`test_contact_limit_blocks_within_rolling_window` were extended to assert the
+commitment semantics and that a `blocked` row does **not** count.
+
+### 2. `walk_ladder` in the decision path
+
+`app/decision/engine.py` gains `decide_with_ladder(event, policy, arm, history)
+-> (Decision, list[dict] | None)`. `decide()` is now a thin wrapper over the
+same internal `_decide()`; every call site is unchanged. The second element is
+the EV-ranked, channel-eligible `action_ladder` entries (best-EV first) **only**
+on the ACT terminal — for the pre-ladder hard gates and for `CONTROL_ARM`,
+`EV_BELOW_FLOOR`, `ROUTE_TO_HUMAN` it is `None`. So a skip or a route
+structurally cannot reach the guardrail walk; `process_failure` also guards on
+`decision.terminal == Terminal.ACT`.
+
+`process_failure` calls `_apply_guardrails` after `decide_with_ladder` and
+before `record_decision`:
+
+- **acted on the EV-best rung** — Decision returned unchanged; one `dry_run`
+  `spend_ledger` commitment row is appended.
+- **walked to a lower rung** — `action` becomes the walked-to rung; the
+  rationale gets a ` | GUARDRAILS: EV-best rung <X> unavailable (<rung>←<primary
+  blocker>; …); walked down to <Y>.` clause; one `dry_run` commitment row for
+  the chosen rung. `ev_inr` / `p_action_basis` still describe the EV-best rung —
+  the walked-to rung and every higher rung's primary blocker are recoverable
+  from the rationale and from `guardrail_evaluations`.
+- **every rung blocked** — `terminal` becomes `BLOCKED/<PRIMARY of the highest
+  rung tried>` (a plain string; the `decisions.terminal` column already takes
+  it), `action` cleared, `gate_basis="guardrail"`, a ` | GUARDRAILS: every rung
+  blocked (…)` rationale clause, and **no** `spend_ledger` row.
+
+`record_ladder_walk` runs for every walk — seven `guardrail_evaluations` rows
+per rung tried, never collapsed (a 3-rung walk-down writes 21 rows). Idempotency
+is unchanged: the second `process_failure` for a payment returns early at
+`_existing_decision`, before the walk, so no duplicate guardrail or ledger rows.
+
+**No `decisions`-table column was added.** `ev_best_rung` is (a) the first rung
+in that `event_id`'s `guardrail_evaluations` walk (insertion order = walk order
+= EV order) and (b) named in the rationale; `chosen_rung` is `decisions.action`.
+`gate_basis` gains one value, `"guardrail"` — a value addition, not a schema
+change, matching how Slice 9 added `treatment_blocked` without a column.
+`_REAL_SPEND_ENABLED = False` in `pipeline.py` is the one flag to flip when a
+real transport lands: it turns the commitment row from `dry_run` into a real
+`debit`.
+
+### 3. `treatment_blocked` fed from real data
+
+`eval/measurement.py` gains `blocked_customers_from_guardrail_log(db_path) ->
+set[str]`: the `customer_id`s whose walk, for at least one `event_id`, blocked
+**every** rung it recorded (no actionable rung found). Missing table → empty
+set, so the caller degrades cleanly to `blocked_fn=None`. `main()` takes
+`--guardrail-db`; when given, that set becomes the `blocked_fn` passed to
+`run_policy`, so a real run reports a real `treatment_blocked` bucket instead of
+an always-empty one. Without the flag, Slice 5's numbers are byte-identical.
+
+### 4. Regression pinned
+
+`test_ev_below_floor_skips_before_the_ladder_and_never_reaches_guardrails`:
+`insufficient_funds`, ₹10.00, best rung `sms`, EV ≈ ₹0.46 < the ₹2.00 floor →
+`SKIP/EV_BELOW_FLOOR` at engine stage (h), before the walk. Asserts the
+terminal is unchanged and that **no** `guardrail_evaluations` or `spend_ledger`
+rows exist for that event. `test_control_arm_skip_never_reaches_guardrails`
+pins the same for `CONTROL_ARM`.
+
+### Tests
+
+`tests/test_slice9b_wiring.py` (6 new): clean-ACT records the walk but leaves
+the Decision untouched; walk-down to a lower rung records both rungs and the
+why (+ idempotency); every-rung-blocked → `BLOCKED/OPT_OUT` with no action and
+no commitment row (+ idempotency); the two pre-ladder-skip regressions; and
+`blocked_fn` derived from the guardrail log feeding a real `treatment_blocked`
+bucket. `tests/test_guardrails.py` keeps its 9 (two extended for
+commitment-counting). Full suite: **217 passed** (211 prior + 6), prior counts
+unchanged.
+
+---
+
+## Slice 9c · verification (`tests/test_slice9c_verify.py`)
+
+Read-only pass over the 9b wiring; one test added,
+`test_walk_down_produces_lower_rung_and_full_log`. It builds a treatment-arm
+`insufficient_funds` event, ₹200, with a phone, at `2026-08-31T22:30:00+05:30`
+(22:30 IST, inside quiet hours). EV order is whatsapp > sms > email >
+retry_silent > agent_call, so the engine's EV-best rung is `whatsapp` and it
+terminates `ACT`; the guardrail walk then blocks whatsapp and sms on
+`quiet_hours` and lands on `email`. Asserts: `decisions.action == 'email'`;
+exactly **21** `guardrail_evaluations` rows for the event_id, in three
+seven-row groups `{whatsapp, sms, email}` (walk not collapsed); the
+`quiet_hours` row is `blocked=1` in both the whatsapp and the sms group while
+email's group has zero blocks; the rationale contains `"EV-best rung whatsapp"`
+and `"walked down to email"` (so `ev_best_rung` is recoverable with no column);
+and `spend_ledger` holds exactly `[("email", "dry_run", 0.0)]` — the commitment
+row is for the walked-to rung, not the EV-best one. Full suite: **218 passed**
+(217 prior + 1), prior counts unchanged.
+
+### Walk call site and its guards
+
+`walk_ladder` is called at exactly one place, `app/pipeline.py` inside
+`_apply_guardrails` (`outcome = guardrails.walk_ladder(event, ranked_rungs,
+gstate, now_utc)`). `_apply_guardrails` itself is invoked from one place,
+guarded by `if decision.terminal == Terminal.ACT and ranked_rungs:` — two
+independent conditions, and `decide_with_ladder` returns a non-`None`
+`ranked_rungs` *only* on the ACT return (every other terminal returns
+`(decision, None)`). The call also sits after the `_existing_decision` early
+return, so a redelivery never re-walks.
+
+### No path reaches the walk on a CONTROL_ARM (or any skip / route) event
+
+A `CONTROL_ARM` decision has `terminal == "SKIP"` (first guard fails) *and*
+`decide_with_ladder` returns `ranked_rungs = None` for the control branch
+(second guard fails). Same for the pre-ladder hard gates, `EV_BELOW_FLOOR` and
+`ROUTE_TO_HUMAN`. The `BLOCKED/<PRIMARY>` terminal is produced only *inside*
+`_apply_guardrails`, after the walk, so it cannot re-trigger the guard.
+Guardrails never turn a skip or a route into an act. Pinned by
+`test_ev_below_floor_skips_before_the_ladder_and_never_reaches_guardrails` and
+`test_control_arm_skip_never_reaches_guardrails`.
+
+### Known gap: non-atomic ladder-walk logging
+
+`record_ladder_walk` commits per-rung (connect -> 7 rows -> commit -> close per
+rung), so a crash mid-walk leaves 7 or 14 orphaned rows for an event whose
+decision was never recorded. Append-only triggers mean they cannot be removed.
+A retry appends a fresh walk on top, so an `event_id` may hold 21 + a partial
+group.
+
+Fail-closed on what matters: **no `decisions` row, no `spend_ledger` row**
+(`record_ladder_walk` runs before `record_spend`, which runs before
+`store.record_decision`, and nothing between `decide_with_ladder` and
+`record_decision` catches). No rewrite of existing rows, so the append-only and
+arm-integrity guarantees hold. The gap is row-count arithmetic for auditors,
+not correctness of any recorded outcome.
+
+Fix (deferred, post-deadline): wrap the whole walk in one transaction so all 21
+rows commit or none do. Not taken before 3 Sep -- changing the audit write path
+under deadline is a worse risk than the documented gap.

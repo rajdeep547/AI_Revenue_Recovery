@@ -37,13 +37,22 @@ real artifact, but an approximation pending per-cause calibration.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import sqlite3
 
+from app import guardrails  # Slice 9 - evaluate-all-then-decide
 from app.arms import assign_arm  # Slice 5 - single implementation lives under app/
 from app.decision import store
-from app.decision.engine import Decision, SkipReason, decide
+from app.decision.engine import Decision, SkipReason, Terminal, decide_with_ladder
 from app.diagnosis import diagnose
 from app.ingest import Ingestor, Outcome
+
+# No action transport exists yet (Slice 8: this module sends nothing). Until
+# one does, every committed action is recorded as a dry-run spend_ledger row:
+# amount 0.00, status 'dry_run'. That row DOES count toward attempt_cap /
+# contact_limit (Slice 9b: caps count commitments) but never toward the money
+# spend_cap. Flip this to True in the same change that adds a real transport.
+_REAL_SPEND_ENABLED = False
 
 # Marker written into the normalized row's preserved ``raw`` payload (under
 # ``notes``) so a reviewer can tell a live-bridged row from a synthetic one.
@@ -178,6 +187,79 @@ def _history(customer_id: str, db_path: str) -> dict:
     return {"last_contact_at": last_contact_at, "prior_recoveries": []}
 
 
+def _apply_guardrails(
+    decision: Decision,
+    ranked_rungs: list[dict],
+    event: dict,
+    *,
+    event_id: str,
+    customer_id: str,
+    db_path: str,
+    now_utc: str,
+) -> Decision:
+    """Slice 9b. The engine decided ACT; now run the seven guardrails down the
+    EV-ranked ladder (best rung first).
+
+    * every rung tried is persisted via ``record_ladder_walk`` -- seven
+      ``guardrail_evaluations`` rows per rung, never collapsed;
+    * all rungs blocked -> terminal becomes ``BLOCKED/<PRIMARY of the highest
+      rung tried>``, ``action`` cleared, no spend row;
+    * walked to a LOWER rung -> ``action`` becomes that rung; the EV-best rung
+      and the primary blocker on each higher rung are appended to the
+      rationale (the per-rung detail is already in ``guardrail_evaluations``);
+    * acted on the EV-best rung -> the Decision is returned unchanged.
+
+    A committed action (either ACT case) also appends one ``spend_ledger`` row.
+    """
+    guardrails.init_guardrail_store(db_path)
+    gstate = guardrails.load_state(
+        db_path, customer_id=customer_id, payment_id=decision.payment_id, now=now_utc
+    )
+    outcome = guardrails.walk_ladder(event, ranked_rungs, gstate, now_utc)
+    guardrails.record_ladder_walk(
+        outcome, event_id=event_id, customer_id=customer_id, db_path=db_path, ts=now_utc
+    )
+
+    ev_best_rung = ranked_rungs[0]["name"]
+
+    if outcome.blocked:
+        why = "; ".join(
+            f"{rep.rung}<-{rep.primary}" for rep in outcome.attempts
+        )
+        return dataclasses.replace(
+            decision,
+            terminal=outcome.terminal,          # "BLOCKED/<PRIMARY>"
+            action=None,
+            gate_basis="guardrail",
+            rationale=(
+                f"{decision.rationale} | GUARDRAILS: every rung blocked "
+                f"({why}); EV-best was {ev_best_rung}."
+            ),
+        )
+
+    chosen_dict = next(r for r in ranked_rungs if r["name"] == outcome.chosen_rung)
+    guardrails.record_spend(
+        event_id=event_id, customer_id=customer_id, payment_id=decision.payment_id,
+        rung=chosen_dict, db_path=db_path, now=now_utc,
+        dispatched=_REAL_SPEND_ENABLED and outcome.dispatched,
+        dry_run=(not _REAL_SPEND_ENABLED) or (not outcome.dispatched),
+    )
+
+    if outcome.chosen_rung == ev_best_rung:
+        return decision  # acted on the EV-best rung -- nothing to amend
+
+    higher = [rep for rep in outcome.attempts if rep.rung != outcome.chosen_rung]
+    why = "; ".join(f"{rep.rung}<-{rep.primary}" for rep in higher)
+    return dataclasses.replace(
+        decision,
+        action=outcome.chosen_rung,
+        rationale=(
+            f"{decision.rationale} | GUARDRAILS: EV-best rung {ev_best_rung} "
+            f"unavailable ({why}); walked down to {outcome.chosen_rung}."
+        ),
+    )
+
+
 def process_failure(
     payment_id: str,
     *,
@@ -228,7 +310,21 @@ def process_failure(
     }
     history = _history(customer_id, db_path)
 
-    decision = decide(event, policy, arm, history)  # Slice 7
+    decision, ranked_rungs = decide_with_ladder(event, policy, arm, history)  # Slice 7
+
+    # Slice 9b: guardrails run AFTER the EV ladder and ONLY on an ACT. Every
+    # terminal that fires before/instead of the ladder (RISK_BLOCKED,
+    # ALREADY_RECOVERED, NO_CONTACT_CHANNEL, COOLDOWN, PRIOR_ZERO, CONTROL_ARM,
+    # EV_BELOW_FLOOR, ROUTE_TO_HUMAN) keeps its terminal untouched -- guardrails
+    # never turn a skip or a route into an act. `ranked_rungs` is non-None only
+    # on the ACT path, so this guard is doubly safe.
+    if decision.terminal == Terminal.ACT and ranked_rungs:
+        decision = _apply_guardrails(
+            decision, ranked_rungs, event,
+            event_id=row["event_id"], customer_id=customer_id,
+            db_path=db_path, now_utc=now_utc,
+        )
+
     store.record_decision(  # Slice 7, append-only
         decision, event_id=row["event_id"], db_path=db_path, now=now_utc
     )

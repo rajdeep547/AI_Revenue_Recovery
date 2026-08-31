@@ -115,20 +115,51 @@ def test_opt_out_blocks_all_contact_rungs():
 
 
 # ============================================================ 3. attempt_cap
-def test_attempt_cap_blocks_after_max():
+def test_attempt_cap_blocks_after_max(tmp_path):
     cfg = GuardrailConfig()  # default cap 3
+
+    # --- pure-predicate view (unchanged) ---
     below = GuardrailState(config=cfg, payment_action_count=2)
     at = GuardrailState(config=cfg, payment_action_count=3)
     over = GuardrailState(config=cfg, payment_action_count=9)
-
     assert "attempt_cap" not in evaluate_all(_event(), LADDER["email"], below, NOON).blocked_by
-
     r = evaluate_all(_event(), LADDER["email"], at, NOON)
     assert "attempt_cap" in r.blocked_by
     assert r.terminal == "BLOCKED/ATTEMPT_CAP"
-
     # it is per payment_id across any rung, silent included
     assert "attempt_cap" in evaluate_all(_event(), LADDER["retry_silent"], over, NOON).blocked_by
+
+    # --- Slice 9b: load_state counts COMMITMENTS (debit + dry_run), not debits ---
+    db = str(tmp_path / "g.db")
+    init_guardrail_store(db)
+    pay = "pay_ac"
+    # two real debits + one dry-run commitment = three committed actions
+    record_spend(event_id="e1", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db, now=NOON, dispatched=True, dry_run=False)
+    record_spend(event_id="e2", customer_id="c", payment_id=pay, rung=LADDER["retry_silent"],
+                 db_path=db, now=NOON, dispatched=True, dry_run=False)
+    record_spend(event_id="e3", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db, now=NOON, dispatched=False, dry_run=True)
+    # a blocked action consumed no attempt -> must NOT count toward the cap
+    record_spend(event_id="e4", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db, now=NOON, dispatched=False, dry_run=False)
+
+    st = load_state(db, customer_id="c", payment_id=pay, config=cfg, now=NOON)
+    assert st.payment_action_count == 3  # 2 debit + 1 dry_run; the 'blocked' row excluded
+    assert "attempt_cap" in evaluate_all(_event(payment_id=pay), LADDER["email"], st, NOON).blocked_by
+
+    # drop the dry-run commitment: only 2 committed + 1 blocked -> under the cap
+    db2 = str(tmp_path / "g2.db")
+    init_guardrail_store(db2)
+    record_spend(event_id="d1", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db2, now=NOON, dispatched=True, dry_run=False)
+    record_spend(event_id="d2", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db2, now=NOON, dispatched=False, dry_run=True)
+    record_spend(event_id="b1", customer_id="c", payment_id=pay, rung=LADDER["email"],
+                 db_path=db2, now=NOON, dispatched=False, dry_run=False)  # blocked, uncounted
+    st2 = load_state(db2, customer_id="c", payment_id=pay, config=cfg, now=NOON)
+    assert st2.payment_action_count == 2
+    assert "attempt_cap" not in evaluate_all(_event(payment_id=pay), LADDER["email"], st2, NOON).blocked_by
 
 
 # ============================================================ 4. contact_limit
@@ -163,6 +194,20 @@ def test_contact_limit_blocks_within_rolling_window(tmp_path):
     assert "contact_limit" in evaluate_all(_event(cust, pay), LADDER["email"], state2, NOON).blocked_by
     # retry_silent is not a contact rung -> unaffected
     assert "contact_limit" not in evaluate_all(_event(cust, pay), LADDER["retry_silent"], state2, NOON).blocked_by
+
+    # --- Slice 9b: a dry-run contact COMMITMENT counts toward the limit ---
+    record_spend(event_id="e_dry", customer_id=cust, payment_id=pay,
+                 rung=LADDER["email"], db_path=db, now=_ist(2026, 8, 31, 11, 30),
+                 dispatched=False, dry_run=True)
+    state3 = load_state(db, customer_id=cust, payment_id=pay, config=cfg, now=NOON)
+    assert state3.contact_actions_in_window == 3  # 2 debit + 1 dry_run
+
+    # --- ...but a 'blocked' contact row does NOT ---
+    record_spend(event_id="e_blk", customer_id=cust, payment_id=pay,
+                 rung=LADDER["sms"], db_path=db, now=_ist(2026, 8, 31, 11, 45),
+                 dispatched=False, dry_run=False)
+    state4 = load_state(db, customer_id=cust, payment_id=pay, config=cfg, now=NOON)
+    assert state4.contact_actions_in_window == 3  # unchanged: 'blocked' excluded
 
 
 # ============================================================ 5. quiet_hours

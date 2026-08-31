@@ -248,6 +248,47 @@ def run_policy(
     )
 
 
+def blocked_customers_from_guardrail_log(db_path: str | Path) -> set[str]:
+    """customer_ids whose guardrail walk -- for at least one ``event_id`` --
+    blocked EVERY rung it tried (the walk found no actionable rung). Read from
+    the append-only ``guardrail_evaluations`` log that
+    ``guardrails.walk_ladder`` / ``record_ladder_walk`` write in the runtime
+    path. Returns an empty set if the table is absent or empty, so a caller
+    can pass the result straight through and get ``blocked_fn=None`` semantics.
+
+    A rung is "blocked" for an event when any of its seven guardrail rows has
+    ``blocked = 1``. An event is a full block when every distinct rung it
+    recorded is blocked -- i.e. the walk never reached an unblocked rung.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        try:
+            raw = conn.execute(
+                "SELECT event_id, customer_id, rung, blocked FROM guardrail_evaluations"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return set()
+    finally:
+        conn.close()
+
+    ev_customer: dict[str, str] = {}
+    rung_blocked: dict[tuple, bool] = {}
+    ev_rungs: dict[str, set] = {}
+    for event_id, customer_id, rung, blocked in raw:
+        ev_customer[event_id] = customer_id
+        ev_rungs.setdefault(event_id, set()).add(rung)
+        key = (event_id, rung)
+        rung_blocked[key] = rung_blocked.get(key, False) or bool(blocked)
+
+    return {
+        ev_customer[event_id]
+        for event_id, rungs in ev_rungs.items()
+        if rungs and all(rung_blocked[(event_id, r)] for r in rungs)
+    }
+
+
 def _fmt(r: UpliftResult) -> str:
     line = (
         f"{r.policy:<20} uplift {r.uplift:+.4f}  95% CI [{r.ci_low:+.4f}, {r.ci_high:+.4f}]  "
@@ -267,6 +308,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--events", default="data/events.json")
     ap.add_argument("--ground-truth", default="data/ground_truth.json")
     ap.add_argument("--seed", type=int, default=None, help="defaults to ground_truth.meta.seed")
+    ap.add_argument(
+        "--guardrail-db", default=None,
+        help="sqlite db holding guardrail_evaluations (Slice 9b). When given, "
+        "treatment-arm customers whose every rung was blocked are pulled into a "
+        "treatment_blocked bucket and excluded from the uplift denominator.",
+    )
     args = ap.parse_args(argv)
 
     rows, stats = load_population(args.events)
@@ -296,9 +343,25 @@ def main(argv: list[str] | None = None) -> None:
         f"treatment-arm={treatment_mean_lift:.4f}  "
         f"drift={treatment_mean_lift - population_mean_lift:+.4f}"
     )
+    blocked_ids: set[str] = (
+        blocked_customers_from_guardrail_log(args.guardrail_db)
+        if args.guardrail_db else set()
+    )
+    blocked_fn = (
+        (lambda row: row["customer_id"] in blocked_ids) if blocked_ids else None
+    )
+    if args.guardrail_db:
+        print(
+            f"guardrail db           {args.guardrail_db}  "
+            f"treatment_blocked customers={len(blocked_ids)}"
+        )
+
     print()
     for name, policy in POLICIES.items():
-        result = run_policy(rows, ground_truth, policy, policy_name=name, run_seed=seed)
+        result = run_policy(
+            rows, ground_truth, policy, policy_name=name, run_seed=seed,
+            blocked_fn=blocked_fn,
+        )
         print(_fmt(result))
 
 

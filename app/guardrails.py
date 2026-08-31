@@ -459,6 +459,14 @@ _REAL_DEBIT = "debit"
 _DRY_RUN = "dry_run"
 _BLOCKED = "blocked"
 
+# attempt_cap and contact_limit count every action the policy COMMITTED to,
+# whether or not money moved: status 'debit' (real dispatch) and status
+# 'dry_run' (recorded, not dispatched -- the only mode that runs today, since
+# there is no dispatcher). status 'blocked' is NOT counted: a blocked action
+# consumed no attempt and reached no customer. The money spend_cap still reads
+# 'debit' rows only (see spent_today_inr).
+_COMMITTED_STATUSES = (_REAL_DEBIT, _DRY_RUN)
+
 
 def init_guardrail_store(db_path: str | Path) -> None:
     """Idempotent. Creates ``guardrail_evaluations``, ``spend_ledger`` and
@@ -587,11 +595,13 @@ def is_opted_out(db_path: str | Path, customer_id: str) -> bool:
 
 # ---------------------------------------------------------------- state assembly
 def _count_payment_actions(db_path: str | Path, payment_id: str) -> int:
+    """Lifetime COMMITTED actions for this payment_id (debit + dry_run)."""
     conn = sqlite3.connect(str(db_path))
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM spend_ledger WHERE payment_id = ? AND status = ?",
-            (payment_id, _REAL_DEBIT),
+            f"SELECT COUNT(*) FROM spend_ledger WHERE payment_id = ? "
+            f"AND status IN ({', '.join('?' * len(_COMMITTED_STATUSES))})",
+            (payment_id, *_COMMITTED_STATUSES),
         ).fetchone()
     finally:
         conn.close()
@@ -599,12 +609,15 @@ def _count_payment_actions(db_path: str | Path, payment_id: str) -> int:
 
 
 def _count_contact_actions_since(db_path: str | Path, customer_id: str, since_iso: str) -> int:
+    """COMMITTED contact-rung actions (debit + dry_run) for this customer with
+    ``ts >= since_iso``. 'blocked' rows are excluded."""
     since = _parse_iso(since_iso)
     conn = sqlite3.connect(str(db_path))
     try:
         rows = conn.execute(
-            "SELECT rung, ts FROM spend_ledger WHERE customer_id = ? AND status = ?",
-            (customer_id, _REAL_DEBIT),
+            f"SELECT rung, ts FROM spend_ledger WHERE customer_id = ? "
+            f"AND status IN ({', '.join('?' * len(_COMMITTED_STATUSES))})",
+            (customer_id, *_COMMITTED_STATUSES),
         ).fetchall()
     finally:
         conn.close()
