@@ -1,0 +1,23 @@
+{
+  "guardrails_version": "s9.1",
+  "kill_switch": false,
+  "dry_run": false,
+  "attempt_cap_max_per_payment_lifetime": 3,
+  "contact_limit_max_per_customer": 2,
+  "contact_limit_window_hours": 24,
+  "quiet_hours_start_ist_hour": 21,
+  "quiet_hours_end_ist_hour": 9,
+  "quiet_hours_blocked_rungs": ["sms", "whatsapp", "agent_call"],
+  "spend_cap_inr_per_ist_day": 500.0,
+  "ist_utc_offset_minutes": 330,
+  "notes": {
+    "precedence": "Guardrails are evaluated in the fixed order kill_switch -> opt_out -> attempt_cap -> contact_limit -> quiet_hours -> spend_cap -> dry_run. evaluate_all() runs ALL seven every time (no short-circuit). The terminal is BLOCKED/<PRIMARY> where PRIMARY is the FIRST blocker in this order; report.blocked_by keeps every blocker.",
+    "kill_switch": "Global halt. Blocks every rung, retry_silent included.",
+    "opt_out": "customer_id present in the suppression_list table. Blocks contact rungs (email/sms/whatsapp/agent_call); retry_silent still runs because no message reaches the customer.",
+    "attempt_cap": "Max lifetime dispatched actions per payment_id. Counts real debits in spend_ledger, any rung.",
+    "contact_limit": "Max dispatched CONTACT-rung actions per customer_id in the rolling window, counted across channels (not per channel).",
+    "quiet_hours": "Blocks quiet_hours_blocked_rungs between start and end IST (wraps midnight). email and retry_silent always pass. Asia/Kolkata is a DST-free fixed +05:30 offset, so a fixed-offset tzinfo is exact and needs no tzdata.",
+    "spend_cap": "Daily INR ceiling on action_cost. Blocks when (sum of real debits for the current IST day + this rung's cost) > cap. Exactly-at-cap is allowed (strict >).",
+    "dry_run": "Never blocks. Marks the action as not dispatched, so the spend_ledger row is written with amount 0.00 and status 'dry_run'."
+  }
+}

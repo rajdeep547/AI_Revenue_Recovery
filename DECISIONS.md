@@ -887,3 +887,145 @@ ingest tests pass unchanged.
 failed, the webhook was signature-verified (an unsigned probe in the same log
 was rejected 401), the payload bridged through the Slice 4 `card_failure`
 adapter, and one decision was recorded.
+
+---
+
+## Slice 9 · Guardrails (`app/guardrails.py`, `config/guardrails.json`)
+
+Seven guardrails sit between the Slice 7 EV ladder (which picks a best rung)
+and a dispatch this codebase still does not perform. Each is a **pure
+predicate** over `(event, chosen_rung, state, now)` returning
+`GuardrailResult(name, blocked, reason, detail)`. `state` (a `GuardrailState`)
+carries the config plus four pre-aggregated numbers the caller reads from the
+DB (`load_state`): `opted_out`, `payment_action_count`,
+`contact_actions_in_window`, `spent_today_inr` — so the predicates stay pure
+and `evaluate_all` keeps its 4-arg shape.
+
+### Evaluate-all-then-decide — the point of the slice
+
+`evaluate_all(event, rung, state, now) -> GuardrailReport` runs **all seven**,
+**no early return, no short-circuit**, even after the first one blocks. The
+report holds all seven `GuardrailResult`s in a fixed tuple order.
+`report.blocked_by` is every guardrail that blocked (length may be > 1), in
+that fixed order. `report.terminal` is `BLOCKED/<PRIMARY>` where PRIMARY is
+`blocked_by[0]` — the first blocker in the fixed order — while `blocked_by`
+retains all of them.
+
+`record_evaluation` persists the **whole** report to the append-only
+`guardrail_evaluations` table (same `BEFORE UPDATE`/`BEFORE DELETE` →
+`RAISE(ABORT, …)` pattern as Slice 2's `audit`): columns `event_id,
+customer_id, rung, ts, guardrail_name, blocked, reason, detail_json`. **Seven
+rows per evaluation, always** — the five that did not fire are written with
+`blocked = 0`, not omitted. `test_quiet_hours_and_spend_cap_both_recorded` is
+the canary: an event at 22:30 IST with the ledger already at the daily cap
+must produce `terminal == BLOCKED/QUIET_HOURS` (precedence), `len(blocked_by)
+== 2`, and exactly 7 persisted rows with **both** `quiet_hours` and
+`spend_cap` at `blocked = 1`. Anyone who adds a short-circuit later fails that
+test.
+
+### Precedence order (fixed)
+
+```
+kill_switch → opt_out → attempt_cap → contact_limit → quiet_hours → spend_cap → dry_run
+```
+
+1. **kill_switch** — global config bool. Blocks every rung, `retry_silent`
+   included.
+2. **opt_out** — `customer_id` in the `suppression_list` table. Blocks contact
+   rungs (`email`/`sms`/`whatsapp`/`agent_call`); `retry_silent` still runs
+   because no message reaches the customer.
+3. **attempt_cap** — max lifetime **dispatched** actions per `payment_id`
+   (default 3), counted as real debits in `spend_ledger`, any rung.
+4. **contact_limit** — max **dispatched** contact-rung actions per
+   `customer_id` in a rolling 24h window (default 2), counted **across
+   channels**. `retry_silent` is not a contact rung, so it never trips this.
+5. **quiet_hours** — blocks `sms`/`whatsapp`/`agent_call` between 21:00 and
+   09:00 **IST**; `email` and `retry_silent` pass. Boundaries: blocked at
+   exactly 21:00, allowed at exactly 09:00. A `now` in any offset is converted
+   to IST first.
+6. **spend_cap** — daily ₹ ceiling on `action_cost`. Blocks when
+   `(sum of real debits for the current IST day) + rung_cost > cap` (default
+   ₹500, strict `>` so exactly-at-cap is allowed).
+7. **dry_run** — global config bool. **Never blocks.** Records `dispatched =
+   False` so the resulting `spend_ledger` row is amount 0.00 / status
+   `dry_run`.
+
+### IST is a fixed +05:30 offset, not `ZoneInfo`
+
+The target interpreter ships no `tzdata`, so `ZoneInfo("Asia/Kolkata")` raises.
+Asia/Kolkata has been a DST-free fixed +05:30 since 1945, so
+`timezone(timedelta(hours=5, minutes=30))` is exact and adds no dependency.
+This is a deliberate implementation choice, recorded here — not a missing
+upstream field.
+
+### Ladder interaction — walk down, log every rung
+
+`walk_ladder(event, ranked_rungs, state, now)` takes the rungs **best-first**
+(the engine's EV order), calls `evaluate_all` on each, and stops at the first
+rung whose report is not blocked → `terminal = "ACT"`, that rung chosen. Every
+rung tried keeps its **own full `GuardrailReport`** in `outcome.attempts` —
+`record_ladder_walk` writes one seven-row block per attempt, never collapsed.
+If every rung is blocked, `terminal = BLOCKED/<PRIMARY of the highest rung
+tried>` (`attempts[0]`), `chosen_rung = None`.
+
+### Spend ledger
+
+`spend_ledger`, append-only (same trigger pattern). `record_spend` writes one
+row per outcome: a real dispatch (`dispatched and not dry_run`) →
+`status='debit'`, amount = the rung's cost; a dry-run → `status='dry_run'`,
+amount 0.00; a blocked action → `status='blocked'`, amount 0.00. The spend-cap
+window (`spent_today_inr`) sums **only** `debit` rows for the current IST day
+(keyed on a stored `ist_day` column). Since nothing in the codebase dispatches
+yet, a real `debit` only ever appears in tests that pass `dispatched=True`
+explicitly — consistent with Slice 8's "no send/execute/dispatch callable".
+
+### Arm integrity — `treatment_blocked` as a third outcome class
+
+Guardrails **never** touch arm assignment. A treatment-arm event that gets
+fully blocked stays treatment arm and becomes a **third outcome class**,
+`treatment_blocked`, distinct from `control` and `treatment_acted`. In
+`eval/measurement.py`, `run_policy` gains a `blocked_fn(row) -> bool`
+predicate: a treatment-arm customer for whom it returns True is resolved under
+the **untouched baseline** (`"none"` — no nudge reached them), counted in a new
+`UpliftResult.treatment_blocked` `ArmResult`, and **excluded from the uplift
+denominator**. Control is never consulted for these customers — a blocked
+customer is never reclassified as control. `uplift` and the Wald CI are
+computed on `treatment_acted` vs `control` only; `treatment_blocked` is
+reported separately (`_fmt` appends it when non-empty).
+`test_treatment_blocked_excluded_from_uplift_denominator` pins that blocking 3
+treatment customers leaves `control.n` / `control.n_recovered`
+byte-identical, moves exactly 3 out of `treatment_acted`, and yields a
+`(uplift, ci_low, ci_high)` identical to physically dropping those 3 rows.
+`blocked_fn` defaults to `None`, so every pre-Slice-9 caller and all Slice 5
+numbers are unchanged (the measurement report is identical bar the
+`treatment` → `treatment_acted` label).
+
+**No `decisions`-table schema change was needed** (the brief said to STOP if it
+were). The arm is already inferable from the recorded `Decision`
+(`skip_reason == CONTROL_ARM` ⟺ control, else treatment, per Slice 8), and a
+full block is completely described by the `guardrail_evaluations` rows for that
+`event_id` plus the `decisions` row. `treatment_blocked` is a *measurement-layer
+classification* over those two append-only logs, not a new column.
+
+### Not yet wired into the runtime pipeline
+
+Slice 9 delivers the guardrail library, its config, the two new append-only
+tables and the measurement support — mirroring the Slice 7→8 split where the
+decision engine landed before the pipeline consumed it. `process_failure` and
+the webhook handler are untouched; wiring `walk_ladder` in after `decide`
+returns is the next integration step.
+
+### Tests
+
+`tests/test_guardrails.py` (9 tests, all clocks frozen explicitly via an IST
+`datetime`, no wall-clock read anywhere):
+`test_kill_switch_blocks_everything`, `test_opt_out_blocks_all_contact_rungs`,
+`test_attempt_cap_blocks_after_max`,
+`test_contact_limit_blocks_within_rolling_window` (inserts one in-window and
+one 30h-old contact debit, asserts the old one has rolled out),
+`test_quiet_hours_blocks_sms` (incl. the 09:00/21:00 boundaries and a UTC
+timestamp converted to IST), `test_spend_cap_blocks_when_exhausted` (incl. a
+debit on another IST day not counting), `test_dry_run_does_not_debit_spend`,
+`test_quiet_hours_and_spend_cap_both_recorded` (the anti-short-circuit canary),
+`test_treatment_blocked_excluded_from_uplift_denominator`. Full suite: **211
+passed** (202 prior + 9), prior counts unchanged.

@@ -35,7 +35,7 @@ import argparse
 import json
 import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -173,11 +173,18 @@ class ArmResult:
 @dataclass(frozen=True)
 class UpliftResult:
     policy: str
-    treatment: ArmResult
+    treatment: ArmResult          # treatment_acted -- got the policy's action
     control: ArmResult
     uplift: float
     ci_low: float
     ci_high: float
+    # Slice 9: treatment-arm customers whom guardrails blocked on every rung.
+    # Still treatment arm (arm assignment is untouched), but no nudge reached
+    # them -- reported here, NOT in the uplift denominator. Defaults to an
+    # empty bucket so every pre-Slice-9 caller is unaffected.
+    treatment_blocked: ArmResult = field(
+        default_factory=lambda: ArmResult("treatment_blocked", 0, 0)
+    )
 
 
 def _wald_ci(treatment: ArmResult, control: ArmResult, z: float = _Z_95) -> tuple[float, float]:
@@ -197,6 +204,7 @@ def run_policy(
     policy_name: str = "",
     run_seed: int | None = None,
     treatment_fraction: float = TREATMENT_FRACTION,
+    blocked_fn: Callable[[dict], bool] | None = None,
 ) -> UpliftResult:
     """Measure one policy's uplift over ``rows`` (normalized customer rows,
     e.g. from :func:`load_population`).
@@ -206,31 +214,52 @@ def run_policy(
     customers who land in treatment. That pairing is what makes "uplift"
     meaningful: treatment-under-policy vs. the same population's
     counterfactual do-nothing rate, not two arbitrary groups.
+
+    ``blocked_fn`` (Slice 9): a predicate on a treatment-arm row that is True
+    when guardrails blocked every rung, so no nudge reached that customer.
+    Such customers stay TREATMENT arm (guardrails never move an arm) but are
+    pulled into a third bucket, ``treatment_blocked``, resolved under the
+    untouched baseline and excluded from the uplift denominator. Control is
+    never consulted -- a blocked customer is never reclassified as control.
     """
     env = Environment(ground_truth, run_seed=run_seed)
     seed = env.run_seed
     control_outcomes: list[bool] = []
     treatment_outcomes: list[bool] = []
+    blocked_outcomes: list[bool] = []
     for row in rows:
         cid = row["customer_id"]
         if assign_arm(seed, cid, treatment_fraction) == "control":
             control_outcomes.append(env.resolve(cid, "none"))
+        elif blocked_fn is not None and blocked_fn(row):
+            blocked_outcomes.append(env.resolve(cid, "none"))
         else:
             treatment_outcomes.append(env.resolve(cid, policy(row)))
 
     control = ArmResult("control", len(control_outcomes), sum(control_outcomes))
-    treatment = ArmResult("treatment", len(treatment_outcomes), sum(treatment_outcomes))
+    treatment = ArmResult("treatment_acted", len(treatment_outcomes), sum(treatment_outcomes))
+    treatment_blocked = ArmResult(
+        "treatment_blocked", len(blocked_outcomes), sum(blocked_outcomes)
+    )
     uplift = treatment.rate - control.rate
     ci_low, ci_high = _wald_ci(treatment, control)
-    return UpliftResult(policy_name, treatment, control, uplift, ci_low, ci_high)
+    return UpliftResult(
+        policy_name, treatment, control, uplift, ci_low, ci_high, treatment_blocked
+    )
 
 
 def _fmt(r: UpliftResult) -> str:
-    return (
+    line = (
         f"{r.policy:<20} uplift {r.uplift:+.4f}  95% CI [{r.ci_low:+.4f}, {r.ci_high:+.4f}]  "
-        f"treatment n={r.treatment.n} rate={r.treatment.rate:.4f}  "
+        f"treatment_acted n={r.treatment.n} rate={r.treatment.rate:.4f}  "
         f"control n={r.control.n} rate={r.control.rate:.4f}"
     )
+    if r.treatment_blocked.n:
+        line += (
+            f"  [treatment_blocked n={r.treatment_blocked.n} "
+            f"rate={r.treatment_blocked.rate:.4f} -- excluded from uplift]"
+        )
+    return line
 
 
 def main(argv: list[str] | None = None) -> None:
