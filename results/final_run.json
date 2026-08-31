@@ -28096,16 +28096,17 @@
     "bootstrap_seed_basis": "sha256(\"bootstrap:20260826:{i}\") -> first 8 bytes -> big-endian int -> random.Random seed, one per resample. Deliberately distinct from the \"assign:\" and bare \"{seed}:{cid}\" prefixes so the resampling shares no entropy with arm assignment or outcome resolution.",
     "corpus_time_max": "2025-01-20T23:45:50+00:00",
     "corpus_time_min": "2025-01-01T00:00:54+00:00",
+    "hash_basis": "every sha256_*_json_normalized field is sha256 over the newline-normalized (\\r\\n and bare \\r -> \\n), BOM-stripped, UTF-8-encoded CONTENT of the input file -- NOT its raw bytes. git core.autocrlf rewrites line endings on checkout, so a raw-byte hash of a text/JSON input is only valid on the OS that computed it: the first push's raw-byte hashes matched locally (Windows/CRLF) but not on the Linux CI runner, and the re-run-and-diff failed on error_code_map.json. The normalized hash is platform-independent. (The field name carries the '_normalized' suffix so a normalized hash is never compared against an old raw-byte one by mistake.)",
     "n_customers": 1611,
     "n_events": 2000,
     "policy_version": "s7.1",
     "rng_seed": 20260826,
     "rng_seed_basis": "single value 20260826: config/decision_policy.json.experiment_seed (arm assignment, sha256(\"assign:{seed}:{cid}\")) AND data/ground_truth.json.meta.seed (outcome resolution, sha256(\"{seed}:{cid}\")). The value-weighted bootstrap CI adds a THIRD, non-overlapping namespace: per-resample RNG seeded sha256(\"bootstrap:{seed}:{i}\") for i in 0..n_resamples-1. No other random source is used.",
-    "sha256_decision_policy_json": "570ba0d29c8a12399ea5d1b6a3aecaef203cf7778e7025068221b18160cd5dd3",
-    "sha256_error_code_map_json": "eea8b90fd3eda8ea6aeb26e5488858de3581c86d190d935cc239b5552dbf438a",
-    "sha256_events_json": "5999f0ea6f48b1b3da9491f1471a84155e558f076ae8f249a81fc34b6003856a",
-    "sha256_ground_truth_json": "8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad",
-    "sha256_guardrails_json": "94ca0400c73744db434104698b625a022935c3e0cde689b37113c646c3a3ec97"
+    "sha256_decision_policy_json_normalized": "570ba0d29c8a12399ea5d1b6a3aecaef203cf7778e7025068221b18160cd5dd3",
+    "sha256_error_code_map_json_normalized": "b756bb05e70663b885d4ee305c39b63edffda0d97a7977a372930bd5dc7f7d6e",
+    "sha256_events_json_normalized": "5999f0ea6f48b1b3da9491f1471a84155e558f076ae8f249a81fc34b6003856a",
+    "sha256_ground_truth_json_normalized": "8dba9b00aa2c6b873c83742335361fb77a02417341d5a7a05ea6e69398182cad",
+    "sha256_guardrails_json_normalized": "94ca0400c73744db434104698b625a022935c3e0cde689b37113c646c3a3ec97"
   },
   "synthetic_provenance_note": "SYNTHETIC CORPUS -- read before the numbers. Outcomes are resolved by eval/environment.py from the latent per-customer parameters in data/ground_truth.json (written by our own datagen.py); they are NOT observed from a payment processor. The 9.91 pp count-basis uplift is therefore a property of that generator. What this run validates is the MEASUREMENT APPARATUS -- blind arm assignment hashed on customer_id, counterfactual subtraction of the control rate, the attribution window (degenerate 'none' here), and Wilson/Newcombe + seeded-bootstrap interval estimation -- it is NOT a claim about real-world recovery performance. The one real-world datapoint in the project is Slice 8's live Razorpay test-mode webhook: a genuine end-to-end decision (insufficient_funds, Rs 10 ticket, best rung sms, terminal SKIP / EV_BELOW_FLOOR). To make the uplift a real claim you would run this same pipeline against live webhooks with an observed recovery feed and a control arm large enough to bound the value-weighted estimate: this run's net_incremental_ev_ci_95 lower bound is Rs -17,710 at n_control = 485, and pushing it above zero at the observed effect size needs the sampling error to shrink by roughly 1.3x, i.e. a control arm on the order of ~810 customers (about 2x today's 485) -- a few thousand customers total at the locked 70:30 split, order 1e3. That assumes the effect size holds and the heavy-tailed value distribution does not worsen, so treat it as a floor.",
   "unit_note": "aggregates are split into customer_level (n_customers=1611, the arm/recovery/uplift denominator -- one normalized row per customer after Ingestor source:reference dedupe) and event_level (n_events=2000). Every field name states its unit."

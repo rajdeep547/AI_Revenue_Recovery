@@ -95,8 +95,47 @@ ACTION_TO_RECOVERY_MAPPING = (
 
 
 # --------------------------------------------------------------------- helpers
-def sha256_file(path: Path) -> str:
+def sha256_raw(path: Path) -> str:
+    """sha256 of the file's raw bytes -- platform-dependent for a text file
+    under git core.autocrlf. Used only by the CRLF self-check, never in the
+    committed artifact (see FIX 9)."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _normalized_text_bytes(raw: bytes) -> bytes:
+    """UTF-8 content with newlines normalized (\\r\\n and bare \\r -> \\n) and a
+    leading BOM stripped -- the platform-independent content of a text file."""
+    text = raw.decode("utf-8")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if text.startswith("﻿"):  # UTF-8 BOM
+        text = text[1:]
+    return text.encode("utf-8")
+
+
+def sha256_text_normalized(path: Path) -> str:
+    """sha256 over newline-normalized, BOM-stripped, UTF-8 CONTENT -- NOT raw
+    bytes. git's autocrlf rewrites line endings on checkout, so a raw-byte hash
+    of a JSON/text input is only valid on the OS that computed it; CI on Linux
+    hashed different bytes for the same committed file and the re-run-and-diff
+    failed. This hash is stable across platforms."""
+    return hashlib.sha256(_normalized_text_bytes(path.read_bytes())).hexdigest()
+
+
+def crlf_selfcheck(named_paths: dict) -> None:
+    """For each hashed text input, compare the raw-byte hash to the normalized
+    hash. If they differ, this checkout has CRLF (or a BOM) for that file --
+    print one line to STDOUT so the platform difference is visible instead of
+    silent. Never written into the artifact, which must stay byte-stable."""
+    for name, path in named_paths.items():
+        p = Path(path)
+        raw = p.read_bytes()
+        if sha256_raw(p) != sha256_text_normalized(p):
+            kind = "CRLF" if b"\r" in raw else "BOM/encoding"
+            print(
+                f"[crlf-selfcheck] {name}: raw-byte hash != normalized hash "
+                f"({kind} on this checkout) -- provenance records the "
+                f"normalized hash, which is platform-independent"
+            )
 
 
 def iso_utc(epoch: int | float) -> str:
@@ -366,6 +405,18 @@ def best_rung_and_ev(policy: dict, event: dict, decision_row: dict) -> tuple:
 
 
 # ------------------------------------------------------------------- provenance
+def _hashed_inputs(events_path: Path, ground_truth_path: Path) -> dict:
+    """The five text/JSON inputs whose normalized content is pinned in the
+    provenance block (and checked for CRLF)."""
+    return {
+        "events.json": events_path,
+        "ground_truth.json": ground_truth_path,
+        "decision_policy.json": DEFAULT_POLICY,
+        "error_code_map.json": ERROR_CODE_MAP,
+        "guardrails.json": GUARDRAILS_CONFIG,
+    }
+
+
 def provenance(events_path: Path, ground_truth_path: Path, policy: dict,
                corpus_min: str, corpus_max: str, n_customers: int,
                n_events: int) -> dict:
@@ -377,11 +428,31 @@ def provenance(events_path: Path, ground_truth_path: Path, policy: dict,
     # self-referential.
     seed = policy["experiment_seed"]
     return {
-        "sha256_events_json": sha256_file(events_path),
-        "sha256_decision_policy_json": sha256_file(DEFAULT_POLICY),
-        "sha256_error_code_map_json": sha256_file(ERROR_CODE_MAP),
-        "sha256_ground_truth_json": sha256_file(ground_truth_path),
-        "sha256_guardrails_json": sha256_file(GUARDRAILS_CONFIG),
+        "sha256_events_json_normalized": sha256_text_normalized(events_path),
+        "sha256_decision_policy_json_normalized": sha256_text_normalized(
+            DEFAULT_POLICY
+        ),
+        "sha256_error_code_map_json_normalized": sha256_text_normalized(
+            ERROR_CODE_MAP
+        ),
+        "sha256_ground_truth_json_normalized": sha256_text_normalized(
+            ground_truth_path
+        ),
+        "sha256_guardrails_json_normalized": sha256_text_normalized(
+            GUARDRAILS_CONFIG
+        ),
+        "hash_basis": (
+            "every sha256_*_json_normalized field is sha256 over the "
+            "newline-normalized (\\r\\n and bare \\r -> \\n), BOM-stripped, "
+            "UTF-8-encoded CONTENT of the input file -- NOT its raw bytes. git "
+            "core.autocrlf rewrites line endings on checkout, so a raw-byte hash "
+            "of a text/JSON input is only valid on the OS that computed it: the "
+            "first push's raw-byte hashes matched locally (Windows/CRLF) but not "
+            "on the Linux CI runner, and the re-run-and-diff failed on "
+            "error_code_map.json. The normalized hash is platform-independent. "
+            "(The field name carries the '_normalized' suffix so a normalized "
+            "hash is never compared against an old raw-byte one by mistake.)"
+        ),
         "rng_seed": seed,
         "rng_seed_basis": (
             "single value 20260826: config/decision_policy.json.experiment_seed "
@@ -416,6 +487,7 @@ def run_final(args) -> None:
     ground_truth_path = Path(args.ground_truth)
     policy = load_policy(args.policy)
     seed = policy["experiment_seed"]
+    crlf_selfcheck(_hashed_inputs(events_path, ground_truth_path))
 
     doc = json.loads(events_path.read_text(encoding="utf-8"))
     events = doc["events"]
@@ -1108,6 +1180,7 @@ def run_split(args) -> None:
     ground_truth_path = Path(args.ground_truth)
     policy = load_policy(args.policy)
     seed = policy["experiment_seed"]
+    crlf_selfcheck(_hashed_inputs(events_path, ground_truth_path))
 
     splits = []
     for tok in args.splits.split(","):

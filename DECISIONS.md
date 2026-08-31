@@ -1404,21 +1404,24 @@ predicates and the provenance window.
 duration / run_id in the artifact — those go to a **gitignored** sibling
 `<name>.meta.json`. Every random draw keys off the committed seed 20260826
 (`assign:{seed}:{cid}` for the arm, `{seed}:{cid}` for outcome resolution) —
-no new unseeded source. Provenance block records the sha256 of `events.json`,
-**`ground_truth.json`** (the dominant input to `recovered` — added per spec
-correction 3), `decision_policy.json`, `error_code_map.json`, `guardrails.json`
-— the inputs that actually pin the run. It does **not** record a commit sha
-(see FIX 8): the git commit that carries the artifact is its commit provenance.
+no new unseeded source. Provenance block records `sha256_*_json_normalized` for
+`events.json`, **`ground_truth.json`** (the dominant input to `recovered` —
+added per spec correction 3), `decision_policy.json`, `error_code_map.json`,
+`guardrails.json` — each hashed over **newline-normalized, BOM-stripped UTF-8
+content, not raw bytes** (FIX 9: git `core.autocrlf` makes raw bytes
+platform-dependent). It does **not** record a commit sha (FIX 8): the git
+commit that carries the artifact is its commit provenance.
 
 **Gate B evidence:** STEP 1 run three times (once to the committed path, twice
 to gitignored scratch) → all three byte-identical, and the seeded bootstrap
 (FIX 5) is inside that determinism. Successive frozen shas as the corrections
 landed: first draft `7dc982ff…` → FIX 1–4 `40c139da…` → FIX 5–6 `2c6c2d27…` →
-FIX 7 `6cf58521…` → FIX 8 **STEP 1
-`24bbd765d8aec0ec4c8f0155f1b885eefa2f29a6944a06752c1f9f2e207025b3`**, **STEP 2
-`31f157c06245a50e4c847b008b9718fe280c71b62dc15da898c1dc15401b3c37`** (FIX 8
-drops one line from each, so both shas move). Only the `.meta.json` sibling
-varies between runs.
+FIX 7 `6cf58521…` → FIX 8 `24bbd765…` → FIX 9 **STEP 1
+`604ca17d59f526619938d056c28a4060952131f2b773e8e36d0d9758bce6f068`**, **STEP 2
+`579c2c51452268ce053df4b232a840e3abed04b4617a68287a5f57782d5d3562`** (FIX 9
+renames the five sha fields to `_normalized` and recomputes them over
+newline-normalized content, so both artifact shas move). Only the `.meta.json`
+sibling varies between runs.
 
 ### Headline numbers (full corpus, locked 70:30) — corrected set
 
@@ -1450,9 +1453,9 @@ The first draft (sha `7dc982ff…`) quoted **`net_ev_realised_inr` = ₹479,695.
 as the headline EV. That figure summed recovered value across **both arms**,
 control included, and subtracted only action cost — it counted self-recovery
 the policy did not cause. That is the raw-recovery fallacy this project exists
-to refute, quoted as if it were an uplift number. Eight fixes across four
-review rounds (1–4, then 5–6, then 7, then 8 after the first push failed CI),
-applied and re-frozen:
+to refute, quoted as if it were an uplift number. Nine fixes across five review
+rounds (1–4, then 5–6, then 7, then 8 and 9 after two successive pushes failed
+CI), applied and re-frozen:
 
 1. **Net EV demoted.** `net_ev_realised_inr` → `gross_recovered_value_all_arms_inr`
    (value unchanged, ₹479,695.20) with a warning sibling string that it is NOT
@@ -1574,6 +1577,29 @@ applied and re-frozen:
    they stay. Same check applied to `results/split_comparison_500.json` — it
    used the same `provenance()` helper, so the one deletion fixes both.
 
+9. **Input hashes are over normalized content, not raw bytes.** The second push
+   failed CI: local sha256 of `rules/error_code_map.json` = `eea8b90f…`, the
+   Linux runner's = `b756bb05…`, `git status` clean, `core.autocrlf = true`.
+   Git stores LF and checks out CRLF on Windows, so `provenance` was hashing
+   the raw bytes of a text file whose bytes are platform-dependent — every
+   text-file sha in the block was only valid on the OS that computed it.
+   `events.json` / `ground_truth.json` matched by luck (CI regenerates them
+   locally with LF); `error_code_map.json` is git-tracked and did not. Fix, in
+   `run_corpus.py`: `sha256_text_normalized()` — decode UTF-8, `\r\n` and bare
+   `\r` → `\n`, strip a BOM, re-encode UTF-8, sha256 that. Applied to all five
+   inputs. Fields **renamed** `sha256_*_json` → `sha256_*_json_normalized` so a
+   normalized hash is never diffed against an old raw one by mistake; a
+   `hash_basis` string in `provenance` explains why. A `crlf_selfcheck()` prints
+   one line to **stdout** (never into the artifact) for any input whose raw and
+   normalized hashes differ — on this Windows checkout it fires for
+   `error_code_map.json`, making the platform gap visible instead of silent.
+   `.gitattributes` at repo root (`* text=auto eol=lf`, `*.json text eol=lf`)
+   is belt-and-braces; the normalized hash is the actual fix and does not
+   depend on it being honoured. **The bug was only observable on a non-Windows
+   runner — which is the argument for having CI at all.** Not done: excluding
+   provenance from the CI diff, hashing on one platform only, or a non-blocking
+   step.
+
 ### CI on the difference is Wilson, not Wald — and `eval.measurement` was NOT changed
 
 The Slice 11 spec asks for **Wilson on the difference** for both artifacts.
@@ -1616,12 +1642,14 @@ pipeline, or the engine fails the build — and finally
 
 ### Status
 
-Two frozen artifacts, corrected and re-frozen four times (FIX 1–4, FIX 5–6,
-FIX 7, FIX 8 after the first push failed CI on the self-referential commit
-sha). Final shas: STEP 1
-`24bbd765d8aec0ec4c8f0155f1b885eefa2f29a6944a06752c1f9f2e207025b3`, STEP 2
-`31f157c06245a50e4c847b008b9718fe280c71b62dc15da898c1dc15401b3c37`;
-byte-identical across three runs each (seeded bootstrap included). README
+Two frozen artifacts, corrected and re-frozen five times (FIX 1–4, FIX 5–6,
+FIX 7, then FIX 8 and FIX 9 after two successive pushes failed CI — a
+self-referential commit sha, then platform-dependent raw-byte input hashes).
+Final shas: STEP 1
+`604ca17d59f526619938d056c28a4060952131f2b773e8e36d0d9758bce6f068`, STEP 2
+`579c2c51452268ce053df4b232a840e3abed04b4617a68287a5f57782d5d3562`;
+byte-identical across three runs each (seeded bootstrap included), and — after
+FIX 9 — across OS/line-ending too. README
 generated block regenerated and `--check`-clean. Full suite **229 passed**. The
 re-run-and-diff break condition, `render_readme_numbers.py --check`, and
 `pytest` all exit 0.

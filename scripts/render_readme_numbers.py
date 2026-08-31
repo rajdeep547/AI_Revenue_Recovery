@@ -187,11 +187,13 @@ def render_block() -> str:
     add(f"Reading: {split['reading']}")
     add("")
     add(
-        "Provenance (the commit that carries this artifact is the rest of it): "
-        "events.json `" + short_sha(prov["sha256_events_json"]) + "`, "
-        "ground_truth.json `" + short_sha(prov["sha256_ground_truth_json"]) + "`, "
+        "Provenance (the commit that carries this artifact is the rest of it; "
+        "hashes are over newline-normalized content, not raw bytes): "
+        "events.json `" + short_sha(prov["sha256_events_json_normalized"]) + "`, "
+        "ground_truth.json `"
+        + short_sha(prov["sha256_ground_truth_json_normalized"]) + "`, "
         "decision_policy.json `"
-        + short_sha(prov["sha256_decision_policy_json"]) + "`, "
+        + short_sha(prov["sha256_decision_policy_json_normalized"]) + "`, "
         "seed " + str(prov["rng_seed"]) + ", corpus "
         + prov["corpus_time_min"] + " … " + prov["corpus_time_max"] + "."
     )

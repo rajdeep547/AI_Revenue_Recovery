@@ -1,0 +1,6 @@
+# Normalize line endings on checkout everywhere (belt-and-braces for FIX 9).
+# The Slice 11 provenance hash is over newline-normalized content, so it does
+# NOT depend on this file being respected -- but LF-everywhere keeps working
+# copies consistent across Windows / Linux / CI.
+* text=auto eol=lf
+*.json text eol=lf
