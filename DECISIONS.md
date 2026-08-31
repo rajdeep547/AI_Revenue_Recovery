@@ -1179,3 +1179,158 @@ not correctness of any recorded outcome.
 Fix (deferred, post-deadline): wrap the whole walk in one transaction so all 21
 rows commit or none do. Not taken before 3 Sep -- changing the audit write path
 under deadline is a worse risk than the documented gap.
+
+---
+
+## Slice 10 · real execution (`app/execution/`, `audit/slice10_idempotency.py`)
+
+Standalone library, deliberately NOT wired into `process_failure` (same
+staging as Slice 9 before 9b): the decision path is untouched, `_apply_guardrails`
+still writes its `dry_run` `spend_ledger` row. The executor is driven by
+`tests/` and the `python -m app.execution.{run_once,reconcile}` CLIs. The
+runtime state on entry was verified first: there was no prior execution client
+or caller to preserve, so "fake_client = existing behaviour" resolves to a
+deterministic no-network `SENT` that mirrors the "recorded, nothing left the
+process" stance the spend_ledger has held since 9b.
+
+### The seam
+
+`ActionClient` Protocol = `send(req) -> ExecutionResult` **plus** `lookup(idem_key)`
+(added beyond the brief's one method: `reconcile` needs the provider's own view
+keyed by `reference_id`, and one object should serve both paths).
+`ExecutionStatus` = `SENT | DUPLICATE | FAILED_RETRIABLE | FAILED_TERMINAL`;
+`SENT`, `DUPLICATE`, `FAILED_TERMINAL` are terminal, `FAILED_RETRIABLE` is not. Selection is config-only via
+`app.execution.config.build_client`: `EXECUTION_MODE` (`fake` default |
+`razorpay_test`), gated by `LIVE_EXECUTION_ENABLED` (must be truthy) and, at
+`RazorpayClient` construction, `RAZORPAY_KEY_ID.startswith("rzp_test_")` or
+`ValueError`. The key secret is never logged (these modules emit no logs) and
+every provider error string is run through `redact(text, key_secret)` before it
+reaches an `ExecutionResult` or the ledger's `error_redacted` column.
+
+### `attempt_n` (business attempt) vs transport retry
+
+`idem_key = sha256(f"exec:{event_id}:{action_type}:{attempt_n}").hexdigest()[:32]`.
+
+`attempt_n` is the **business attempt** — a human or a policy deliberately
+deciding to re-contact the customer. It is the only input that moves the
+idem_key, so a genuine second nudge gets a fresh key and a fresh provider
+object. A **transport retry** — what `executor._call_with_retries` does after a
+5xx / timeout / connection error (3 retries, exponential 0.5/1/2 s + ≤25%
+jitter) — does **not** touch `attempt_n` and reuses the exact same idem_key on
+every HTTP attempt, so the provider sees one logical operation. This is stated
+in `app/execution/client.py` and enforced by B2 (four HTTP attempts, one
+idem_key, one terminal outcome row).
+
+### The `exec:` hash prefix
+
+The idem_key input is prefixed `exec:` so its hash space cannot collide with
+the two existing sha256 spaces: `assign:{run_seed}:{customer_id}` (arm
+assignment, `app/arms.py`) and the bare `{run_seed}:{customer_id}`
+outcome-resolution draw (`eval/environment.py`). Same discipline as Slice 5's
+`assign:` deviation. Only the 32-hex digest ever crosses to the provider (as
+`reference_id`); the prefix is an internal namespace guard.
+
+### Intent-before-send ordering
+
+`execute()`:
+`(a)` compute idem_key + `request_fingerprint` (sha256 of the canonicalised
+payload); `(b)` intent exists with a terminal outcome → return it, **zero**
+provider calls; `(c)` intent exists, same idem_key, different fingerprint →
+`FAILED_TERMINAL` `"idem_key_payload_mismatch"`, no send; `(d)` `insert_intent`
+**COMMITs** before `_call_with_retries` makes any network call; `(e)` append
+the outcome. `insert_intent` is a plain `INSERT` (not `OR IGNORE`): a second
+writer on the same idem_key gets `sqlite3.IntegrityError` on the PRIMARY KEY —
+that IS the concurrency lock (B7: two threads, one provider call). An intent
+that exists with a non-terminal / missing outcome and a matching fingerprint is
+**not re-sent** by `execute()` (double-send risk across workers); it returns the
+last known non-terminal state and leaves recovery to `reconcile`. Both ledger
+tables are append-only via `BEFORE UPDATE` / `BEFORE DELETE` → `RAISE(ABORT)`,
+same as Slice 2's `audit` (B8).
+
+`reconcile` (startup, `python -m app.execution.reconcile`): for every intent
+whose latest outcome is missing or `FAILED_RETRIABLE`, `client.lookup(idem_key)`;
+found → append `SENT`/`DUPLICATE` with the real `provider_ref` (adopted); not
+found → left non-terminal, **no auto-resend this slice**. B5 (SIGKILL between
+the provider recording the POST and us writing the outcome) proves the stub
+received exactly one request, the intent was committed, and reconcile converges
+the ledger to one terminal outcome with no second POST. B6 (SIGKILL inside the
+pre-commit hook) proves zero intent rows and zero provider requests persist.
+
+### Provider-side dedup: which mechanism Razorpay actually honours — LIVE-CONFIRMED
+
+Target object = a **Payment Link** (`POST /v1/payment_links`); a nudge creates
+a link for the failed amount. Confirmed by a live Razorpay **test-mode** run
+(not just the docs):
+
+- **`reference_id` uniqueness is the SOLE provider-side mechanism.** Payment
+  Links accept `reference_id` (≤ 40 chars — the 32-hex idem_key fits) and
+  **reject a duplicate with HTTP 400** rather than returning the original
+  object. The client maps that 400 → `DUPLICATE` and recovers `provider_ref`
+  via `GET /v1/payment_links?reference_id=<idem_key>`.
+- **`X-Razorpay-Idempotency-Key` was never sent.** That header is a RazorpayX
+  Payouts / idempotent-Refunds feature; it does nothing on Payment Links or the
+  core Payments API. `reference_id` uniqueness carried the whole dedup.
+
+`idem_key` is sent as `reference_id` verbatim; test mode accepted the 32-hex
+string (the docs' "must be a unique *number*" wording is stale). `provider_ref`
+= the Payment Link `id` (`plink_...`).
+
+**Live evidence.**
+
+```
+Run 1  (exec.db, fresh ledger)
+       idem_key      e24bd74614cb28242eb218deb1863409
+       provider_ref  plink_TWNoPH228Xf5KF
+       status        SENT
+
+Run 2  (exec.db, replay — identical event_id/action_type/attempt_n)
+       idem_key      e24bd74614cb28242eb218deb1863409   (same)
+       provider_ref  plink_TWNoPH228Xf5KF               (same)
+       status        SENT                               (NOT DUPLICATE)
+       -> local-ledger short-circuit (executor step b). audit shows outcomes=1,
+          i.e. ZERO provider calls on this run.
+
+Run 3  (exec_lost.db, FRESH ledger, identical business key)
+       idem_key      e24bd74614cb28242eb218deb1863409   (same input -> same key)
+       provider_ref  plink_TWNoPH228Xf5KF               (resolved, not created)
+       status        DUPLICATE
+       -> a real HTTP POST left the process; Razorpay rejected it on
+          reference_id uniqueness (HTTP 400); the original link was resolved via
+          GET /v1/payment_links?reference_id=<idem_key>.
+
+audit exec.db       intents 1 · outcomes 1 · terminal 1 · refs 1 · duplicates 0 · OK
+audit exec_lost.db  intents 1 · outcomes 1 · terminal 1 · refs 1 · duplicates 0 · OK
+```
+
+**Reading the ledger: `SENT` on replay vs `DUPLICATE` are different signals.**
+A `SENT` outcome returned on a replay (Run 2) is the **original** outcome
+handed back by the local-ledger short-circuit — no provider call happened, and
+the status is whatever the first send recorded. `DUPLICATE` (Run 3) means the
+**provider itself** rejected a POST that actually went out, because the
+`reference_id` already existed on their side; `provider_ref` was then recovered
+by lookup, not minted. So: `SENT` twice for one idem_key with `outcomes = 1`
+means the ledger absorbed the replay; a `DUPLICATE` row means an HTTP call left
+the process and Razorpay was the thing that deduped it. When auditing later,
+`DUPLICATE` is the marker that the local ledger was lost/bypassed and
+provider-side dedup was the backstop that held.
+
+### Tests / audit
+
+`tests/test_slice10_execution.py` — 11 tests, B1–B9 (B9 is three: live-flag
+gate, non-test-key gate, TAIL_ACT never reaching the executor). B5/B6 spawn a
+real subprocess + a real `http.server` stub and `Popen.kill()` the child
+(TerminateProcess on Windows = uncatchable, SIGKILL-equivalent). Executor
+`sleep` is stubbed everywhere — no wall-clock dependence.
+`audit/slice10_idempotency.py` re-derives three invariants straight from the
+ledger (≤1 terminal outcome per idem_key; ≤1 distinct `provider_ref` per
+`(event_id, action_type, attempt_n)`; every `provider_ref` appears exactly
+once) and exits non-zero on any violation.
+
+Full suite: **229 passed** (218 prior unchanged + 11).
+
+### Status
+
+PASS condition met. The live test-mode run (Runs 1–3 above) confirmed the
+provider-side dedup mechanism; `audit/slice10_idempotency.py` is clean on both
+ledgers. Full suite **229 passed** (218 prior unchanged + 11 new). The executor
+is **not** wired into `process_failure` yet — that is a later slice.
