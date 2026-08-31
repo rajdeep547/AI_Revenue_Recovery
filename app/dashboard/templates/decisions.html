@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All decisions</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics">Metrics</a>
+  <a href="/decisions" aria-current="page">All decisions</a>
+  <a href="/not-chased">Not chased</a>
+  <a href="/queue">Human queue</a>
+</nav>
+<main class="wrap">
+
+  <header class="pagehead">
+    <h1>Every recovery decision on record</h1>
+    <p class="sub">
+      Read-only. One row per payment the decision engine has ruled on, from
+      <code>{{ db_path }}</code>. <strong>{{ total }}</strong> decision(s) total,
+      grouped by outcome. Open a payment to see why that decision was made.
+    </p>
+    {% if groups %}
+    <p class="sub">
+      Jump to:
+      {% for g in groups %}
+      <a href="#g-{{ g.name|replace('/', '-') }}">{{ g.name }} ({{ g.count }})</a>{% if not loop.last %} &middot; {% endif %}
+      {% endfor %}
+    </p>
+    {% endif %}
+  </header>
+
+  {% if not groups %}
+  <p class="empty">No decisions on record in <code>{{ db_path }}</code> yet.</p>
+  {% endif %}
+
+  {% for g in groups %}
+  <section class="block" id="g-{{ g.name|replace('/', '-') }}">
+    <h2 class="section-h">{{ g.name }} &mdash; {{ g.count }}</h2>
+    <div style="overflow-x:auto;">
+    <table class="list">
+      <thead>
+        <tr>
+          <th>Payment</th>
+          <th>Arm</th>
+          <th>Cause</th>
+          <th class="num">Ticket</th>
+          <th>Chosen rung</th>
+          {% if g.name == "SKIP" %}<th>Skip reason</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in g.rows %}
+        <tr>
+          <td><a href="/trace/{{ r.payment_id }}"><code>{{ r.payment_id }}</code></a></td>
+          <td>{{ r.arm }}</td>
+          <td>{{ r.cause }}</td>
+          <td class="num">{{ r.ticket_inr }}</td>
+          <td>{{ r.chosen_rung }}</td>
+          {% if g.name == "SKIP" %}<td>{{ r.skip_reason }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if groups %}
+  <p class="caption">
+    Columns: <code>decisions.payment_id</code>, <code>decisions.cause</code>,
+    <code>decisions.ticket_inr</code>, <code>decisions.action</code> (the rung
+    that fired, or <span class="dash">{{ dash }}</span> for a skip / route /
+    block), <code>decisions.skip_reason</code>. Groups are
+    <code>decisions.terminal</code> (every <code>BLOCKED/&lt;X&gt;</code> folded
+    into one <code>BLOCKED</code> group). Arm is not stored:
+    <code>app.arms.assign_arm(experiment_seed, customer_id)</code> with
+    <code>customer_id</code> from <code>normalized_events</code> joined
+    <code>reference = payment_id</code> &mdash; find a control-arm example in the
+    <code>SKIP</code> group under skip reason <code>CONTROL_ARM</code>.
+  </p>
+  {% endif %}
+
+</main>
+</body>
+</html>

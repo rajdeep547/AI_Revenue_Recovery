@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Not chased</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics">Metrics</a>
+  <a href="/decisions">All decisions</a>
+  <a href="/not-chased" aria-current="page">Not chased</a>
+  <a href="/queue">Human queue</a>
+</nav>
+<main class="wrap">
+
+  <header class="pagehead">
+    <h1>The payments we chose not to chase</h1>
+  </header>
+
+  <p class="lead-para">
+    A system built to recover failed payments spends real money on every message
+    it sends, so it has to know whether that spending is worth it. The only way
+    to know is to compare against what would have happened with no contact at
+    all &mdash; how many of these customers would have paid on their own. That
+    number cannot be estimated from the customers we <em>do</em> contact; it can
+    only be measured by holding a slice of customers back and never messaging
+    them: the <strong>control group</strong> (here, 30% of everyone, picked by a
+    fixed coin-flip on the customer id). Their recovery rate is the baseline;
+    only recoveries <em>above</em> that baseline &mdash; the
+    <strong>incremental</strong> ones, the ones our contact can take credit for
+    &mdash; count as value the system created. Without the held-back group that
+    figure is unknowable, and every claim about the system would be a guess. The
+    rest of this page applies the same discipline case by case: decisions where
+    the <strong>expected value</strong> of contacting (the likely rupee gain,
+    once the payoff is weighted by how probable a recovery is) fell below the
+    <strong>floor</strong> we set, or where a hard rule made contact impossible
+    or pointless. Not chasing these is the system working, not failing.
+  </p>
+
+  <p class="lead">
+    <strong>{{ totals.count }}</strong> decision(s) not chased &mdash;
+    <strong>{{ totals.withheld_disp }}</strong> of ticket value withheld from
+    contact. ({{ totals.act }} were contacted; {{ totals.total }} decisions in
+    all.)
+  </p>
+
+  {% for c in cats %}
+  <section class="block">
+    <h2 class="section-h">{{ c.heading }} &mdash; {{ c.count }} &middot; {{ c.withheld_disp }} withheld</h2>
+    <p class="lead">{{ c.gloss }}.</p>
+
+    {% for s in c.subs %}
+      {% if s.count == 0 %}
+      <p class="empty-line">
+        <strong>{{ s.label }}</strong> (<code>{{ s.key }}</code>): empty on this
+        data &mdash; this path exists and did not fire ({{ s.gloss }}).
+      </p>
+      {% else %}
+      <p class="lead">
+        <strong>{{ s.label }}</strong> (<code>{{ s.key }}</code>) &mdash;
+        {{ s.count }} row(s), {{ s.withheld_disp }} withheld.
+        <span class="dash-note">{{ s.gloss }}.</span>
+      </p>
+      <div style="overflow-x:auto;">
+      <table class="list">
+        <thead>
+          <tr><th>Payment</th><th>Cause</th><th class="num">Ticket</th><th>Terminal</th></tr>
+        </thead>
+        <tbody>
+          {% for r in s.rows %}
+          <tr>
+            <td><a href="/trace/{{ r.payment_id }}"><code>{{ r.payment_id }}</code></a></td>
+            <td>{{ r.cause }}</td>
+            <td class="num">{{ r.ticket_disp }}</td>
+            <td>{{ r.terminal }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <p class="caption">
+    Rows from <code>decisions</code> where <code>terminal = 'SKIP'</code>
+    (grouped by <code>skip_reason</code>) or <code>terminal LIKE 'BLOCKED/%'</code>.
+    &ldquo;Withheld&rdquo; is the sum of <code>ticket_inr</code> over those rows
+    &mdash; ticket value the system chose not to spend a contact against, not a
+    loss. Decisions that <em>were</em> contacted (<code>terminal = 'ACT'</code>)
+    are on <a href="/decisions">all decisions</a>; routed-to-a-person decisions
+    are on the <a href="/queue">human queue</a>.
+  </p>
+
+</main>
+</body>
+</html>

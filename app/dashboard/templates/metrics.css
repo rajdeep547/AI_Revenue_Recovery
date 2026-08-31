@@ -1,0 +1,280 @@
+/* Slice 12 - read-only metrics dashboard. One plain CSS file, inlined into
+   the page at render time. No framework, no CDN, no build step. */
+
+:root {
+  --bg: #f6f7f9;
+  --card-bg: #ffffff;
+  --ink: #1c2530;
+  --ink-soft: #55606d;
+  --ink-faint: #8a94a0;
+  --line: #e2e6ea;
+
+  /* LIVE = teal. CORPUS RUN = amber. Deliberately unlike each other so the
+     two sources can never be visually confused. */
+  --live: #0f8a7e;
+  --live-bg: #ecf7f5;
+  --live-ink: #0a5a52;
+  --corpus: #b8791b;
+  --corpus-bg: #fbf3e6;
+  --corpus-ink: #7a5010;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --card-bg: #1c2027;
+    --ink: #e8ebef;
+    --ink-soft: #aab3bd;
+    --ink-faint: #78828d;
+    --line: #2c333d;
+
+    --live: #3fc9ba;
+    --live-bg: #12211f;
+    --live-ink: #8fe4da;
+    --corpus: #e0a94a;
+    --corpus-bg: #241d10;
+    --corpus-ink: #f0cf8f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* -- corpus banner: persistent, non-dismissible, every dashboard page ----- */
+.corpus-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  margin: 0;
+  padding: 10px 18px;
+  background: var(--corpus);
+  color: #1c1200;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  border-bottom: 2px solid var(--corpus-ink);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+        Arial, sans-serif;
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.screen-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card-bg);
+  font-size: 13px;
+}
+.screen-nav a { color: var(--ink-soft); text-decoration: none; }
+.screen-nav a:hover { color: var(--live-ink); text-decoration: underline; }
+.screen-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
+
+.pagehead h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+
+.pagehead .sub {
+  margin: 4px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: rgba(127, 127, 127, 0.14);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.dash { color: var(--ink-faint); font-weight: 600; }
+
+/* -- panels ----------------------------------------------------------------- */
+.panel {
+  margin-top: 34px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  padding: 8px 18px 22px;
+}
+
+.panel-live { border-color: var(--live); background: color-mix(in srgb, var(--live-bg) 55%, transparent); }
+.panel-corpus { border-color: var(--corpus); background: color-mix(in srgb, var(--corpus-bg) 55%, transparent); }
+
+.panel-head { padding: 12px 4px 4px; }
+
+.panel-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.panel-live .panel-title { color: var(--live-ink); }
+.panel-corpus .panel-title { color: var(--corpus-ink); }
+
+.panel-note { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+
+.corpus-absent {
+  margin: 10px 4px 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* -- grid + cards --------------------------------------------------------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.card {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px 20px;
+}
+
+.card-live { border-left: 4px solid var(--live); }
+.card-corpus { border-left: 4px solid var(--corpus); }
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--corpus-ink);
+  background: var(--corpus-bg);
+  border: 1px solid var(--corpus);
+}
+
+.big {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+table.rows { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+
+table.rows th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-soft);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+table.rows td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+table.rows tr:last-child th,
+table.rows tr:last-child td { border-bottom: none; }
+
+table.rows tr.muted th,
+table.rows tr.muted td { color: var(--ink-faint); }
+
+table.rows .subhead {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  padding-top: 10px;
+  border-bottom: none;
+}
+
+table.subrows { margin-top: -4px; }
+
+.rowlabel {
+  margin: 4px 0 2px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.spend-note { margin: 2px 0; font-size: 12.5px; }
+.spend-note.muted { color: var(--ink-faint); }
+
+.caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-faint);
+}
+
+/* -- card 4: the headline ---------------------------------------------------- */
+.card.hero {
+  grid-column: 1 / -1;
+  border-width: 2px;
+  padding: 22px 24px 24px;
+}
+.card-live.hero { background: var(--live-bg); border-color: var(--live); }
+.card-corpus.hero { background: var(--corpus-bg); border-color: var(--corpus); }
+
+.card-live.hero h3 { color: var(--live-ink); }
+.card-corpus.hero h3 { color: var(--corpus-ink); }
+
+.hero-number {
+  margin: 0 0 14px;
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.card-live.hero .hero-number { color: var(--live-ink); }
+.card-corpus.hero .hero-number { color: var(--corpus-ink); }
+
+.hero-number .unit {
+  font-size: 20px;
+  font-weight: 600;
+  margin-left: 8px;
+  opacity: 0.8;
+}
+
+.hero-suppressed {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.card.hero table.rows td { font-size: 15px; }
+
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+  .hero-number { font-size: 42px; }
+}

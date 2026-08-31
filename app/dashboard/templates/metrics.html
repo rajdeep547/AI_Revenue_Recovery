@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recovery metrics</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics" aria-current="page">Metrics</a>
+  <a href="/decisions">All decisions</a>
+  <a href="/not-chased">Not chased</a>
+  <a href="/queue">Human queue</a>
+</nav>
+<main class="wrap">
+
+  <header class="pagehead">
+    <h1>Recovery metrics</h1>
+    <p class="sub">
+      Read-only. Rendered {{ generated_at }}. Two independent sources below,
+      shown side by side and <strong>never summed</strong>: real webhook
+      traffic (LIVE) and the Slice&nbsp;11 frozen simulation (CORPUS&nbsp;RUN).
+    </p>
+    <p class="sub">
+      A figure shown as <span class="dash">{{ dash }}</span> means "not yet
+      known" &mdash; it is never rendered as a zero rate.
+    </p>
+  </header>
+
+  <!-- ================= LIVE ================================================ -->
+  <section class="panel panel-live">
+    <div class="panel-head">
+      <h2 class="panel-title">LIVE &mdash; real webhook deliveries</h2>
+      <p class="panel-note">
+        Source database: <code>{{ live.db_path }}</code>
+        {% if not live.db_exists %}
+          &mdash; <strong>file not present yet</strong>; every figure reads
+          <span class="dash">{{ dash }}</span>.
+        {% elif not live.display.have_data %}
+          &mdash; no decisions recorded yet; every figure reads
+          <span class="dash">{{ dash }}</span>.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="grid">
+
+      <!-- LIVE CARD 1 -->
+      <section class="card card-live">
+        <h3>1 &middot; Events processed</h3>
+        <p class="big">{{ live.display.events_total }}</p>
+        <table class="rows">
+          {% for label, value in live.display.card1_rows %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+        </table>
+        {% if live.display.card1_skip_rows %}
+        <table class="rows subrows">
+          <tr><th colspan="2" class="subhead">SKIP by skip_reason</th></tr>
+          {% for label, value in live.display.card1_skip_rows %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+        <p class="caption">
+          Rows in <code>decisions</code> grouped by <code>decisions.terminal</code>;
+          the SKIP row is sub-grouped by <code>decisions.skip_reason</code>.
+          <code>BLOCKED/&lt;PRIMARY&gt;</code> terminals appear only if guardrails
+          blocked a rung.
+        </p>
+      </section>
+
+      <!-- LIVE CARD 2 -->
+      <section class="card card-live">
+        <h3>2 &middot; Arm split</h3>
+        <table class="rows">
+          <tr><th>Treatment n</th><td>{{ live.display.arm_treatment_n }}</td></tr>
+          <tr><th>Control n</th><td>{{ live.display.arm_control_n }}</td></tr>
+          <tr><th>Realised control share</th><td>{{ live.display.control_share }}</td></tr>
+          <tr class="muted"><th>Target control share</th><td>{{ live.display.control_share_target }}</td></tr>
+          {% if live.display.arm_unknown_n %}
+          <tr class="muted"><th>Unmatched (no normalized row)</th><td>{{ live.display.arm_unknown_n }}</td></tr>
+          {% endif %}
+        </table>
+        <p class="caption">
+          Arm per decision: <code>decisions.payment_id &rarr;
+          normalized_events.reference &rarr; customer_id</code>, then
+          <code>app.arms.assign_arm(experiment_seed, customer_id)</code> with
+          <code>experiment_seed</code> from
+          <code>config/decision_policy.json</code>. Arm is derived, never
+          stored. Target control share is
+          <code>1 &minus; app.arms.TREATMENT_FRACTION</code> = 0.30.
+        </p>
+      </section>
+
+      <!-- LIVE CARD 3 -->
+      <section class="card card-live">
+        <h3>3 &middot; Recovery within 72h</h3>
+        <table class="rows">
+          <tr><th>Treatment rate</th><td>{{ live.display.rate_treatment }}</td></tr>
+          <tr><th>Control rate</th><td>{{ live.display.rate_control }}</td></tr>
+          <tr class="muted"><th>Raw recovery rate (pooled)</th><td>{{ live.display.rate_pooled }}</td></tr>
+        </table>
+        <p class="caption">
+          Recovered = <code>events.status = 'recovered'</code> (joined
+          <code>events.payment_id = normalized_events.reference</code>),
+          counted only when
+          <code>events.updated_at &minus; normalized_events.occurred_at
+          &le; 72h</code>. This signal exists <strong>only</strong> when a real
+          <code>payment.captured</code> webhook arrived for that payment, so an
+          absent recovery is <strong>not</strong> evidence the payment did not
+          recover. The pooled raw rate is shown greyed beside the control rate;
+          it is never the headline.
+        </p>
+      </section>
+
+      <!-- LIVE CARD 4 : HEADLINE -->
+      <section class="card card-live hero">
+        <h3>4 &middot; Incremental uplift</h3>
+        {% if live.raw.uplift_pp is none %}
+        <p class="hero-suppressed">{{ live.display.uplift }}</p>
+        {% else %}
+        <p class="hero-number">{{ live.display.uplift }}</p>
+        {% endif %}
+        <table class="rows">
+          <tr><th>Treatment rate &minus; control rate</th><td>{{ live.display.uplift }}</td></tr>
+          <tr><th>Recovered-count attributable</th><td>{{ live.display.uplift_attributable }}</td></tr>
+        </table>
+        <p class="caption">
+          Card&nbsp;3 treatment rate minus control rate, in percentage points;
+          attributable count = uplift &times; treatment n.
+          <strong>Suppressed unless both arms have n &ge; 30</strong> &mdash;
+          below that the card states the real n values instead of a number.
+          This, not the raw recovery rate, is what the screen is about.
+        </p>
+      </section>
+
+      <!-- LIVE CARD 5 -->
+      <section class="card card-live">
+        <h3>5 &middot; Money</h3>
+        <table class="rows">
+          <tr><th>Recovered value &mdash; treatment</th><td>{{ live.display.recovered_value_treatment }}</td></tr>
+          <tr><th>Recovered value &mdash; control</th><td>{{ live.display.recovered_value_control }}</td></tr>
+          <tr><th>Net realised EV</th><td>{{ live.display.net_realised_ev }}</td></tr>
+        </table>
+        <p class="rowlabel">Action spend</p>
+        <p class="spend-note">{{ live.display.action_spend }}</p>
+        <p class="spend-note muted">Would-be action cost: {{ live.display.would_be_action_cost }}</p>
+        <p class="caption">
+          <strong>No money moves.</strong> <code>_REAL_SPEND_ENABLED</code> is
+          False, so every <code>spend_ledger</code> row is
+          <code>status = 'dry_run'</code> at 0.00 and nothing is debited. The
+          would-be action cost (&Sigma; <code>decisions.action_cost_inr</code>
+          where <code>terminal = 'ACT'</code>) is shown only to size the
+          dry-run, not as spend. Recovered value by arm = &Sigma;
+          <code>decisions.ticket_inr</code> over recovered payments; net
+          realised EV = counterfactual-subtracted incremental recovered value
+          minus debited spend (Rs&nbsp;0.00).
+        </p>
+      </section>
+
+      <!-- LIVE CARD 6 -->
+      <section class="card card-live">
+        <h3>6 &middot; Chosen rung distribution</h3>
+        <table class="rows">
+          {% for label, value in live.display.rung_rows %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="caption">
+          Counts of <code>decisions.action</code> grouped by rung, over rows
+          with <code>decisions.terminal = 'ACT'</code>. The five rungs are
+          <code>config/decision_policy.json &rarr; action_ladder</code>.
+        </p>
+      </section>
+
+    </div>
+  </section>
+
+  <!-- ================= CORPUS RUN ========================================= -->
+  <section class="panel panel-corpus">
+    <div class="panel-head">
+      <h2 class="panel-title">CORPUS RUN &mdash; Slice&nbsp;11 frozen simulation</h2>
+      {% if corpus %}
+      <p class="panel-note">
+        Verbatim from <code>{{ corpus.source_file }}</code>
+        (policy <code>{{ corpus.policy_version }}</code>,
+        {{ corpus.n_customers }} customers / {{ corpus.n_events }} events,
+        corpus window {{ corpus.corpus_time_min }} &rarr; {{ corpus.corpus_time_max }}).
+        Recovery outcomes are simulated by the eval harness, not observed from
+        live traffic. Numbers are shown exactly as stored &mdash; no
+        recomputation, no re-rounding, no blending with LIVE.
+      </p>
+      {% endif %}
+    </div>
+
+    {% if not corpus %}
+    <p class="corpus-absent">
+      <code>results/final_run.json</code> is not present &mdash; run
+      <code>python scripts/run_corpus.py final</code> to generate it. The LIVE
+      panel above is unaffected.
+    </p>
+    {% else %}
+    <div class="grid">
+
+      <!-- CORPUS CARD 1 -->
+      <section class="card card-corpus">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>1 &middot; Events processed</h3>
+        <p class="big">{{ corpus.n_events }}</p>
+        <table class="rows">
+          <tr><th>Customers (dedup denominator)</th><td>{{ corpus.n_customers }}</td></tr>
+          <tr><th>ROUTE_TO_HUMAN</th><td>{{ corpus.route_to_human_count }}</td></tr>
+          <tr><th>Suppressed by guardrail</th><td>{{ corpus.suppressed_by_guardrail_count }}</td></tr>
+        </table>
+        <table class="rows subrows">
+          <tr><th colspan="2" class="subhead">SKIP by skip_reason (event-weighted)</th></tr>
+          {% for label, value in corpus.skip_counts_by_reason %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="caption">
+          <code>aggregate.event_level</code> of <code>final_run.json</code>:
+          <code>n_events</code>, <code>skip_counts_by_reason</code>,
+          <code>route_to_human_count</code>,
+          <code>suppressed_by_guardrail_count</code>; customer count from
+          <code>provenance.n_customers</code>.
+        </p>
+      </section>
+
+      <!-- CORPUS CARD 2 -->
+      <section class="card card-corpus">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>2 &middot; Arm split</h3>
+        <table class="rows">
+          <tr><th>Treatment customers</th><td>{{ corpus.n_treatment_customers }}</td></tr>
+          <tr><th>Control customers</th><td>{{ corpus.n_control_customers }}</td></tr>
+          <tr><th>Treatment blocked (excluded from uplift)</th><td>{{ corpus.n_treatment_blocked_customers }}</td></tr>
+          <tr class="muted"><th>Target control share</th><td>0.30</td></tr>
+        </table>
+        <p class="caption">
+          <code>aggregate.customer_level.n_treatment_customers</code> /
+          <code>n_control_customers</code> /
+          <code>n_treatment_blocked_customers</code>, verbatim. Realised share
+          is not recomputed here.
+        </p>
+      </section>
+
+      <!-- CORPUS CARD 3 -->
+      <section class="card card-corpus">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>3 &middot; Recovery rate by arm</h3>
+        <table class="rows">
+          <tr><th>Treatment rate</th><td>{{ corpus.recovery_rate_treatment }}</td></tr>
+          <tr><th>Control rate</th><td>{{ corpus.recovery_rate_control }}</td></tr>
+          <tr class="muted"><th>Treatment recoveries</th><td>{{ corpus.recovery_count_treatment }}</td></tr>
+          <tr class="muted"><th>Control recoveries</th><td>{{ corpus.recovery_count_control }}</td></tr>
+        </table>
+        <p class="caption">
+          <code>aggregate.customer_level.recovery_rate_treatment</code> /
+          <code>recovery_rate_control</code>, verbatim. The corpus has no time
+          window (<code>attribution_window = "none"</code>); this is an all-time
+          simulated rate, not a within-72h rate.
+        </p>
+      </section>
+
+      <!-- CORPUS CARD 4 : HEADLINE -->
+      <section class="card card-corpus hero">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>4 &middot; Incremental uplift</h3>
+        <p class="hero-number">{{ corpus.incremental_uplift_pp }}<span class="unit">pp</span></p>
+        <table class="rows">
+          <tr><th>95% CI (Newcombe, pp)</th><td>[{{ corpus.uplift_ci_low_pp }}, {{ corpus.uplift_ci_high_pp }}]</td></tr>
+          <tr><th>Incremental recoveries (count basis)</th><td>{{ corpus.incremental_recoveries_count }}</td></tr>
+        </table>
+        <p class="caption">
+          <code>aggregate.customer_level.incremental_uplift_pp</code> with
+          <code>uplift_ci_95.low_pp</code> / <code>high_pp</code> and
+          <code>incremental_recoveries_count</code>, verbatim. Simulated
+          outcomes &mdash; a property of the generator, not a real-world claim.
+        </p>
+      </section>
+
+      <!-- CORPUS CARD 5 -->
+      <section class="card card-corpus">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>5 &middot; Money</h3>
+        <table class="rows">
+          <tr><th>Recovered value &mdash; treatment</th><td>{{ corpus.total_recovered_value_treatment_inr }}</td></tr>
+          <tr><th>Recovered value &mdash; control</th><td>{{ corpus.total_recovered_value_control_inr }}</td></tr>
+          <tr><th>Incremental recovered value</th><td>{{ corpus.incremental_recovered_value_inr }}</td></tr>
+          <tr><th>Action cost (distinct actions)</th><td>{{ corpus.total_action_cost_inr }}</td></tr>
+          <tr><th>Net incremental EV</th><td>{{ corpus.net_incremental_ev_inr }}</td></tr>
+          <tr class="muted"><th>Net incremental EV 95% bootstrap</th><td>[{{ corpus.net_incremental_ev_ci_low }}, {{ corpus.net_incremental_ev_ci_high }}]</td></tr>
+        </table>
+        <p class="caption">
+          <code>aggregate.customer_level</code> value fields plus
+          <code>event_level.total_action_cost_inr</code>, all verbatim (INR).
+          The net-EV bootstrap interval crosses zero &mdash; on this corpus the
+          value-weighted EV is not distinguishable from zero at 95%.
+        </p>
+      </section>
+
+      <!-- CORPUS CARD 6 -->
+      <section class="card card-corpus">
+        <span class="badge">{{ corpus.badge }}</span>
+        <h3>6 &middot; Chosen rung distribution</h3>
+        <table class="rows">
+          <tr><th colspan="2" class="subhead">distinct actions (one send / customer)</th></tr>
+          {% for label, value in corpus.distinct_actions_by_rung %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+          <tr><th colspan="2" class="subhead">event-weighted</th></tr>
+          {% for label, value in corpus.action_counts_by_rung %}
+          <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="caption">
+          <code>event_level.distinct_actions_by_rung</code> and
+          <code>action_counts_by_rung</code>, verbatim.
+        </p>
+      </section>
+
+    </div>
+    {% endif %}
+  </section>
+
+</main>
+</body>
+</html>

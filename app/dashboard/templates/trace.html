@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Decision trace &mdash; {{ d.payment_id }}</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics">Metrics</a>
+  <a href="/decisions">All decisions</a>
+  <a href="/not-chased">Not chased</a>
+  <a href="/queue">Human queue</a>
+</nav>
+<main class="wrap">
+
+  <p class="crumb"><a href="/decisions">&larr; all decisions</a></p>
+  <p class="kicker">Decision trace &middot; <code>{{ d.payment_id }}</code> &middot; read-only</p>
+
+  <!-- ================= 1 · VERDICT ======================================== -->
+  <section class="block verdict">
+    <h2 class="section-h">1 &middot; The verdict</h2>
+    <p class="lead">
+      The <strong>verdict</strong> is the one-line decision the engine reached for
+      this payment: contact the customer, skip them, or hand the case to a person.
+    </p>
+    <p class="verdict-line">{{ d.verdict }}</p>
+    <p class="prov">
+      terminal <code>{{ d.terminal }}</code> &nbsp;&middot;&nbsp;
+      skip_reason <code>{{ d.skip_reason }}</code> &nbsp;&middot;&nbsp;
+      gate_basis <code>{{ d.gate_basis }}</code>
+    </p>
+    <p class="caption">
+      Plain-English reading of <code>decisions.terminal</code> and
+      <code>decisions.skip_reason</code>; <code>decisions.gate_basis</code> names
+      which rule decided it (<code>expected_value</code>, <code>hard_gate</code>,
+      <code>experiment</code>, <code>policy_override</code>, <code>guardrail</code>,
+      <code>llm_gated</code>). The monospace line is the raw record, as provenance.
+    </p>
+  </section>
+
+  <!-- ================= 2 · WHAT FAILED ==================================== -->
+  <section class="block">
+    <h2 class="section-h">2 &middot; What failed</h2>
+    <table class="kv">
+      <tr><th>Diagnosed cause</th><td>{{ d.cause }}</td></tr>
+      <tr><th>Diagnosis confidence</th><td>{{ d.cause_confidence }}</td></tr>
+      <tr><th>Ticket value</th><td>{{ d.ticket_inr }}</td></tr>
+      <tr><th>Payment method</th><td>{{ d.method }}</td></tr>
+      <tr><th>Classified by</th><td>{{ d.classifier_path }}</td></tr>
+    </table>
+    {% if d.is_llm %}
+    <p class="note">
+      This cause came from the <strong>LLM</strong> diagnoser, not the rules
+      engine. LLM-classified events never take a money action &mdash;
+      <code>TAIL_ACT_ENABLED</code> is <code>False</code> &mdash; so this event was
+      recorded and routed to a human queue for a person to action. No paid nudge
+      was authorised automatically.
+    </p>
+    {% endif %}
+    <p class="caption">
+      <code>decisions.cause</code>, <code>decisions.cause_confidence</code>,
+      <code>decisions.ticket_inr</code>; method from
+      <code>normalized_events.method</code>. Rules vs LLM is reconstructed (the
+      source is not a stored column): the rules engine
+      (<code>app/diagnosis.py</code>) always stamps confidence
+      <code>0.32</code> (<code>app.pipeline.RULES_CONFIDENCE</code>); any other
+      confidence, or the LLM-only cause <code>expired_card</code>, means the LLM
+      path (<code>app/llm_diagnosis.py</code>), which is hard-gated to the human
+      queue.
+    </p>
+  </section>
+
+  <!-- ================= 3 · THE ARITHMETIC =============================== -->
+  <section class="block">
+    <h2 class="section-h">3 &middot; The arithmetic</h2>
+    <p class="lead">
+      Every act-or-skip on economics comes from one line of arithmetic:
+      <strong>expected value</strong> (EV &mdash; the average rupee result of an
+      action once the payoff is weighted by how likely it is). The engine acts
+      only when EV clears the <strong>floor</strong> (the minimum EV, in rupees,
+      fixed in policy as <code>min_ev_inr</code> = {{ d.min_ev_inr }}).
+    </p>
+    {% if d.is_control %}
+    <p class="note">
+      This customer is in the <strong>control</strong> arm, so this arithmetic
+      <strong>did not drive the outcome</strong> &mdash; it is shown only to record
+      what the engine computed. The skip is by experimental design (section&nbsp;5).
+    </p>
+    {% endif %}
+    <div class="eq">
+      <span class="lbl">p_effective</span>
+      <span class="op">=</span> confidence <span class="op">&times;</span> prior
+      <span class="op">+</span> (1 <span class="op">&minus;</span> confidence)
+      <span class="op">&times;</span> population_rate<br>
+      <span class="op">&nbsp;&nbsp;=</span>
+      {{ d.cc_raw }} <span class="op">&times;</span> {{ d.prior }}
+      <span class="op">+</span> (1 <span class="op">&minus;</span> {{ d.cc_raw }})
+      <span class="op">&times;</span> {{ d.population_rate }}
+      <span class="op">&nbsp; [&times; history multiplier</span>
+      {{ d.history_multiplier }}<span class="op">]</span><br>
+      <span class="op">&nbsp;&nbsp;=</span> {{ d.p_effective }}
+      <hr>
+      <span class="lbl">p_action_basis</span>
+      <span class="op">=</span> min( p_effective <span class="op">&times;</span>
+      chosen-rung effectiveness {{ d.action_effectiveness }}<span class="op">,</span>
+      0.95 ) <span class="op">=</span> {{ d.p_action_basis }}
+      <hr>
+      <span class="lbl">EV</span>
+      <span class="op">=</span> p_action_basis <span class="op">&times;</span> ticket
+      <span class="op">&minus;</span> action cost<br>
+      <span class="op">&nbsp;&nbsp;=</span> {{ d.p_action_basis }}
+      <span class="op">&times;</span> {{ d.ticket_inr }}
+      <span class="op">&minus;</span> {{ d.action_cost_inr }}<br>
+      <span class="op">&nbsp;&nbsp;=</span> {{ d.ev_inr }}
+      <hr>
+      <span class="lbl">vs floor</span>
+      <span class="op">&nbsp;</span> {{ d.ev_vs_floor }}
+    </div>
+    <p class="callout">
+      <strong>p here is the <em>incremental</em> probability, not the raw one.</strong>
+      Incremental means <em>caused by our contact</em> &mdash; the extra slice of
+      these failures that recover <em>because</em> we reached out, over and above
+      the customers who would have paid on their own anyway. Most
+      insufficient-funds and downtime failures self-retry and succeed with no
+      help; paying to nudge those buys nothing. Only the incremental slice can
+      repay the cost of the action, so only it belongs in the EV.
+    </p>
+    <p class="caption">
+      <code>decisions.p_incremental_prior</code>,
+      <code>decisions.history_multiplier</code>,
+      <code>decisions.p_effective</code>, <code>decisions.p_action_basis</code>,
+      <code>decisions.action_cost_inr</code>, <code>decisions.ev_inr</code>.
+      <code>population_rate</code> is <code>population_incremental</code> and the
+      floor is <code>min_ev_inr</code>, both from
+      <code>config/decision_policy.json</code>; chosen-rung effectiveness is that
+      file's <code>action_ladder</code> entry. A <span class="dash">{{ dash }}</span>
+      means the field is NULL because this decision skipped before any EV was
+      computed.
+    </p>
+  </section>
+
+  <!-- ================= 4 · THE LADDER =================================== -->
+  <section class="block">
+    <h2 class="section-h">4 &middot; The ladder</h2>
+    <p class="lead">
+      The recovery actions form a fixed <strong>ladder</strong> &mdash; five
+      <strong>rungs</strong> ordered cheapest first: a silent gateway retry, then
+      email, SMS, WhatsApp, and finally a live agent call. The engine scores every
+      channel-eligible rung's EV on this payment's numbers and takes the best one.
+    </p>
+    <div style="overflow-x:auto;">
+    <table class="grid">
+      <thead>
+        <tr><th>Rung</th><th class="num">Cost</th><th class="num">EV here</th>
+          <th>Viable?</th><th>Why it lost</th></tr>
+      </thead>
+      <tbody>
+        {% for r in d.ladder %}
+        <tr {% if r.chosen %}class="chosen"{% endif %}>
+          <td>{{ r.name }}{% if r.chosen %} <span class="tag chosen">chosen</span>{% endif %}</td>
+          <td class="num">{{ r.cost_disp }}</td>
+          <td class="num">{{ r.ev_disp }}</td>
+          <td>
+            {% if r.viable is none %}{{ dash }}
+            {% elif r.viable %}yes{% else %}no{% endif %}
+          </td>
+          <td>{{ r.lost }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="lead">
+      Chosen rung:
+      <strong>{% if d.chosen_rung == dash %}none — this decision stopped before the
+      ladder was scored{% else %}{{ d.chosen_rung }}{% endif %}</strong>. A rung that
+      &ldquo;lost on cost&rdquo; was viable &mdash; its own EV cleared the floor
+      &mdash; but a different rung's cost / effectiveness trade-off produced a
+      higher EV. A rung that &ldquo;lost on viability&rdquo; could never have
+      acted: its own EV is below the floor. A rung that lost on
+      &ldquo;channel&rdquo; needs an email address or phone number this customer
+      does not have on file.
+    </p>
+    <p class="caption">
+      Rung names, <code>cost_inr</code> and <code>effectiveness</code> from
+      <code>config/decision_policy.json &rarr; action_ladder</code>. EV per rung
+      recomputed here:
+      <code>min(p_effective &times; effectiveness, 0.95) &times; ticket_inr
+      &minus; cost_inr</code>, using this decision's
+      <code>decisions.p_effective</code> and <code>decisions.ticket_inr</code>.
+      Viable = that EV &ge; <code>min_ev_inr</code>. Chosen =
+      <code>decisions.action</code> when set; on a skip / block it is the same
+      recomputation's max-EV eligible rung.
+    </p>
+  </section>
+
+  <!-- ================= 5 · ARM ========================================= -->
+  <section class="block">
+    <h2 class="section-h">5 &middot; Arm</h2>
+    <p class="lead">
+      Every customer sits permanently on one side of a live experiment &mdash; an
+      <strong>arm</strong>. Most are in <em>treatment</em> (contactable); a
+      <strong>control</strong> slice is deliberately never contacted, so the
+      recovery rate of those untouched customers measures what our contact
+      actually adds.
+    </p>
+    <table class="kv">
+      <tr><th>Keyed on customer_id</th><td>{{ d.customer_id }}</td></tr>
+      <tr><th>experiment_seed</th><td>{{ d.experiment_seed }}</td></tr>
+      <tr><th>Assigned arm</th><td>{{ d.arm }}</td></tr>
+    </table>
+    <p class="lead">
+      Assignment keys on <code>customer_id</code>, never <code>event_id</code>, so
+      one customer stays in one arm across every repeat failure.
+      {% if d.arm == "control" %}
+      This decision is <strong>control</strong>: the skip is by experimental
+      design, not because the EV was too low. The arithmetic in section&nbsp;3
+      still ran &mdash; its result simply was not allowed to drive an action
+      {% if d.shadow_action != dash %}(in treatment it would have fired
+      <strong>{{ d.shadow_action }}</strong>){% endif %}.
+      {% endif %}
+    </p>
+    <p class="caption">
+      <code>customer_id</code> from <code>normalized_events</code> joined
+      <code>reference = payment_id</code>; arm recomputed by
+      <code>app.arms.assign_arm(experiment_seed, customer_id)</code> with
+      <code>experiment_seed</code> from <code>config/decision_policy.json</code>.
+      The arm is derived on every read, never stored on the decision.
+    </p>
+  </section>
+
+  <!-- ================= 6 · GUARDRAILS ================================== -->
+  <section class="block">
+    <h2 class="section-h">6 &middot; Guardrails</h2>
+    <p class="lead">
+      Before any rung is sent, seven <strong>guardrails</strong> run &mdash;
+      safety checks that can veto an action even when the economics say go. They
+      are evaluated for the chosen rung, in a fixed precedence order.
+    </p>
+    {% if d.guardrails_ran %}
+    <p class="lead">Evaluations for rung <strong>{{ d.guardrail_rung }}</strong>:</p>
+    <div style="overflow-x:auto;">
+    <table class="grid">
+      <thead><tr><th>Guardrail</th><th>Verdict</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for g in d.guardrail_rows %}
+        <tr>
+          <td>{{ g.name }}</td>
+          <td>
+            {% if g.blocked %}<span class="tag block">block</span>
+            {% else %}<span class="tag pass">pass</span>{% endif %}
+          </td>
+          <td>{{ g.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="lead">
+      <strong>No guardrails ran for this decision.</strong> Guardrails are
+      evaluated only when the engine reaches ACT and walks the ladder; this
+      decision terminated at <code>{{ d.terminal }}</code> before any rung was
+      attempted, so <code>guardrail_evaluations</code> holds no rows for it.
+    </p>
+    {% endif %}
+    <p class="caption">
+      Rows from <code>guardrail_evaluations</code> where
+      <code>event_id</code> is this decision's and
+      <code>rung = {{ d.guardrail_rung }}</code>: columns
+      <code>guardrail_name</code>, <code>blocked</code>, <code>reason</code>.
+      Seven rows are written per rung attempted, never collapsed. Fixed order:
+      kill_switch &rarr; opt_out &rarr; attempt_cap &rarr; contact_limit &rarr;
+      quiet_hours &rarr; spend_cap &rarr; dry_run (dry_run never blocks).
+    </p>
+  </section>
+
+  <!-- ================= 7 · PROVENANCE ================================= -->
+  <section class="block">
+    <h2 class="section-h">7 &middot; Provenance</h2>
+    <table class="kv">
+      <tr><th>inputs_hash</th><td><code>{{ d.inputs_hash }}</code></td></tr>
+      <tr><th>policy_version</th><td>{{ d.policy_version }}</td></tr>
+      <tr><th>created_at</th><td>{{ d.created_at }}</td></tr>
+    </table>
+    <p class="lead" style="margin-top:16px;">Audit rows for this payment, in time order</p>
+    {% if d.audit_rows %}
+    <div style="overflow-x:auto;">
+    <table class="grid">
+      <thead><tr><th>created_at</th><th>action</th><th>event_id</th><th>detail</th></tr></thead>
+      <tbody>
+        {% for a in d.audit_rows %}
+        <tr>
+          <td>{{ a.created_at }}</td>
+          <td>{{ a.action }}</td>
+          <td><code>{{ a.event_id }}</code></td>
+          <td><code>{{ a.detail }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p><span class="dash">{{ dash }}</span></p>
+    {% endif %}
+    <p class="callout">
+      Both <code>decisions</code> and <code>audit</code> are
+      <strong>append-only</strong>, enforced by SQLite <code>BEFORE UPDATE</code>
+      / <code>BEFORE DELETE</code> triggers that <code>RAISE(ABORT)</code>. This
+      record cannot have been edited after the payment's outcome became known
+      &mdash; the database rejects the write outright.
+    </p>
+    <p class="caption">
+      <code>decisions.inputs_hash</code>, <code>decisions.policy_version</code>,
+      <code>decisions.created_at</code>; audit rows from <code>audit</code> where
+      <code>payment_id = {{ d.payment_id }}</code>, ordered
+      <code>created_at</code> then <code>id</code>. <code>inputs_hash</code> is a
+      sha256 over every input the engine read, so the decision is recomputable
+      from the record.
+    </p>
+  </section>
+
+</main>
+</body>
+</html>

@@ -8,6 +8,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app import pipeline
+from app.dashboard.screens import router as screens_router
+from app.dashboard.trace import router as trace_router
+from app.dashboard.view import router as dashboard_router
 from app.decision.engine import load_policy
 from app.db import (
     append_audit,
@@ -84,6 +87,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Razorpay Webhook Receiver", lifespan=lifespan)
+
+# Slice 12: read-only metrics dashboard at GET /metrics. Registered here
+# because the route must hang off this app; the webhook handler itself is
+# untouched.
+app.include_router(dashboard_router)
+
+# Slice 12 Screen 2: GET /trace/{payment_id} (HTML decision trace, read-only)
+# and GET /decisions (read-only index). Same connect_ro-only constraint.
+app.include_router(trace_router)
+
+# Slice 12 Screens 3 & 4: GET /not-chased and GET /queue (read-only).
+app.include_router(screens_router)
 
 
 @app.post("/webhooks/razorpay")

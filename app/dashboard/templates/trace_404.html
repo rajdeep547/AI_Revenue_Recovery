@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>No such decision</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics">Metrics</a>
+  <a href="/decisions">All decisions</a>
+  <a href="/not-chased">Not chased</a>
+  <a href="/queue">Human queue</a>
+</nav>
+<main class="wrap">
+  <p class="crumb"><a href="/decisions">&larr; all decisions</a></p>
+  <section class="block verdict">
+    <h2 class="section-h">Not found</h2>
+    <p class="verdict-line">No decision is on record for this payment.</p>
+    <p class="lead">
+      Payment <code>{{ payment_id }}</code> has no row in the
+      <code>decisions</code> table of the database this page reads. Either the id
+      is wrong, or the payment never reached the decision engine (for example it
+      never settled as failed).
+    </p>
+    <p class="lead">
+      The full list of decisions that <em>do</em> exist is at
+      <a href="/decisions">/decisions</a>.
+    </p>
+  </section>
+</main>
+</body>
+</html>

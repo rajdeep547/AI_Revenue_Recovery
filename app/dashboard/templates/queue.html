@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Human queue</title>
+  <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if corpus_banner %}
+<div class="corpus-banner" role="alert">{{ corpus_banner }}</div>
+{% endif %}
+<nav class="screen-nav">
+  <a href="/metrics">Metrics</a>
+  <a href="/decisions">All decisions</a>
+  <a href="/not-chased">Not chased</a>
+  <a href="/queue" aria-current="page">Human queue</a>
+</nav>
+<main class="wrap">
+
+  <header class="pagehead">
+    <h1>Parked for a person</h1>
+    <p class="sub">
+      Decisions the pipeline would not action on its own, oldest first. This
+      screen is <strong>read-only</strong>: it has no claim, resolve, or action
+      controls and <strong>writes nothing</strong> &mdash; it only shows what has
+      been set aside for a human to decide.
+    </p>
+  </header>
+
+  {% if rows %}
+  <div style="overflow-x:auto;">
+  <table class="list">
+    <thead>
+      <tr>
+        <th>Payment</th>
+        <th class="num">Ticket</th>
+        <th>Cause</th>
+        <th class="num">Confidence</th>
+        <th>Why it routed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a href="/trace/{{ r.payment_id }}"><code>{{ r.payment_id }}</code></a></td>
+        <td class="num">{{ r.ticket_disp }}</td>
+        <td>{{ r.cause }}</td>
+        <td class="num">{{ r.confidence_disp }}</td>
+        <td>{{ r.why }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="caption">
+    <code>decisions</code> rows with <code>terminal = 'ROUTE_TO_HUMAN'</code>,
+    ordered by <code>created_at</code>. &ldquo;Why it routed&rdquo; is derived
+    from <code>gate_basis</code>, <code>route_ticket_floor_inr</code> and
+    <code>route_confidence_ceiling</code>. No column on this page can be edited
+    and nothing here writes to the database.
+  </p>
+  {% else %}
+  <section class="block">
+    <h2 class="section-h">Nothing is queued</h2>
+    <p class="lead">
+      Two paths lead a decision here, and neither fired on this data:
+    </p>
+    <p class="lead">
+      <strong>1 &middot; High-ticket, low-confidence decisions.</strong> When a
+      ticket is at or above the review floor (Rs&nbsp;10,000) <em>and</em> the
+      diagnosed cause is held with less than 55% confidence, policy refuses to
+      authorise an expensive live-agent contact automatically and routes the
+      case to a person. It is a standing rule about who may approve a large,
+      weakly-diagnosed spend &mdash; not a claim that the expected value is
+      negative. On this corpus every decision resolves to a cheap email, and the
+      rule only applies to the agent-call rung, so it never triggered.
+    </p>
+    <p class="lead">
+      <strong>2 &middot; Every LLM-classified failure.</strong> The
+      language-model diagnoser is not yet trusted to move money: any failure it
+      classifies is recorded and parked here for a human, never actioned
+      automatically (<code>TAIL_ACT_ENABLED</code> is <code>False</code>), until
+      it has been validated against real outcomes. On this corpus the rules
+      classifier resolved every event, so the LLM path was never used.
+    </p>
+    <p class="lead">
+      When a decision does route here it will show its payment id, ticket, cause,
+      confidence and which of the two paths sent it &mdash; and this screen will
+      still only display it, never act on it.
+    </p>
+  </section>
+  {% endif %}
+
+</main>
+</body>
+</html>
